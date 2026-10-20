@@ -2,6 +2,8 @@ package parser
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"time"
 
 	"reschedule/internal/config"
+	"reschedule/internal/lessons"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -20,18 +23,18 @@ var minsk = time.FixedZone("Europe/Minsk", 3*60*60)
 
 const lessonDuration = 80 * time.Minute
 
-var kinds = map[string]LessonKind{
-	"Лекция": KindLecture,
-	"Практическое занятие": KindPractice,
-	"Семинар":                 KindSeminar,
-	"Лабораторная работа":     KindLab,
-	"Контролируемая УСР (ДО)": KindSelfStudy,
+var kinds = map[string]lessons.Kind{
+	"Лекция": lessons.KindLecture,
+	"Практическое занятие": lessons.KindPractice,
+	"Семинар":                 lessons.KindSeminar,
+	"Лабораторная работа":     lessons.KindLab,
+	"Контролируемая УСР (ДО)": lessons.KindSelfStudy,
 }
 
-var addresses = map[string]LocationKind{
-	"ул. Московская 15а": LocationM15,
-	"ул. Московская 5":   LocationM5,
-	"ул. Обойная 7":      LocationOboynaya,
+var addresses = map[string]lessons.Location{
+	"ул. Московская 15а": lessons.LocationM15,
+	"ул. Московская 5":   lessons.LocationM5,
+	"ул. Обойная 7":      lessons.LocationOboynaya,
 }
 
 type Parser struct {
@@ -44,7 +47,7 @@ func New(config *config.ParserConfig) *Parser {
 	}
 }
 
-func (p *Parser) Run(ctx context.Context) ([]Lesson, error) {
+func (p *Parser) Fetch(ctx context.Context) ([]lessons.Lesson, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -60,19 +63,19 @@ func (p *Parser) Run(ctx context.Context) ([]Lesson, error) {
 		return nil, fmt.Errorf("fetch schedule: unexpected status %s", resp.Status)
 	}
 
-	lessons, err := parse(resp.Body)
+	result, err := parse(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("parse schedule: %w", err)
 	}
-	return lessons, nil
+	return result, nil
 }
 
 type row struct {
-	lesson   Lesson
+	lesson   lessons.Lesson
 	subgroup string
 }
 
-func parse(r io.Reader) ([]Lesson, error) {
+func parse(r io.Reader) ([]lessons.Lesson, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
 		return nil, err
@@ -121,16 +124,18 @@ func parse(r io.Reader) ([]Lesson, error) {
 		rows = append(rows, rw)
 	}
 
-	lessons := make([]Lesson, 0, len(rows))
+	result := make([]lessons.Lesson, 0, len(rows))
 	for i := 0; i < len(rows); {
 		j := i + 1
 		for j < len(rows) && sameLesson(rows[i], rows[j]) {
 			j++
 		}
-		lessons = append(lessons, merge(rows[i:j]))
+		lesson := merge(rows[i:j])
+		lesson.ID = lessonID(lesson)
+		result = append(result, lesson)
 		i = j
 	}
-	return lessons, nil
+	return result, nil
 }
 
 func parseRow(day time.Time, cells []*html.Node) (row, error) {
@@ -157,7 +162,7 @@ func parseRow(day time.Time, cells []*html.Node) (row, error) {
 	location, room := parseRoom(text(cells[3]))
 
 	return row{
-		lesson: Lesson{
+		lesson: lessons.Lesson{
 			StartAt:  startAt,
 			EndAt:    startAt.Add(lessonDuration),
 			Subject:  subject,
@@ -189,12 +194,12 @@ func splitKind(s string) (subject, kind string) {
 	return s, ""
 }
 
-func parseRoom(s string) (LocationKind, string) {
+func parseRoom(s string) (lessons.Location, string) {
 	switch s {
 	case "Онлайн, уч. портал":
-		return LocationOnline, ""
+		return lessons.LocationOnline, ""
 	case "ул. Щорса,5а, Спортивный комплекс":
-		return LocationShorsa, "Спортивный комплекс"
+		return lessons.LocationShorsa, "Спортивный комплекс"
 	}
 
 	i := strings.LastIndex(s, ",")
@@ -208,6 +213,11 @@ func parseRoom(s string) (LocationKind, string) {
 	return location, strings.TrimSpace(s[i+1:])
 }
 
+func lessonID(l lessons.Lesson) string {
+	sum := sha256.Sum256([]byte(l.StartAt.UTC().Format(time.RFC3339) + "|" + l.Subject))
+	return hex.EncodeToString(sum[:])
+}
+
 func sameLesson(a, b row) bool {
 	return a.subgroup != "" && b.subgroup != "" &&
 		a.lesson.StartAt.Equal(b.lesson.StartAt) &&
@@ -215,7 +225,7 @@ func sameLesson(a, b row) bool {
 		a.lesson.Kind == b.lesson.Kind
 }
 
-func merge(rows []row) Lesson {
+func merge(rows []row) lessons.Lesson {
 	lesson := rows[0].lesson
 	if rows[0].subgroup == "" {
 		return lesson

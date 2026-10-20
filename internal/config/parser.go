@@ -5,6 +5,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"time"
 )
 
 func ParseConfig(cfg any) []error {
@@ -21,19 +22,37 @@ func ParseConfig(cfg any) []error {
 		if kind != reflect.Ptr {
 			envTag = field.Tag.Get("env")
 			isOptional := field.Tag.Get("optional") == "true"
+
 			if envTag == "" {
 				errs = append(errs, fmt.Errorf("missing env tag for var %s", field.Name))
 				continue
 			}
 
 			value = os.Getenv(envTag)
-			if value == "" && !isOptional {
-				errs = append(errs, fmt.Errorf("missing env variable %s", envTag))
+
+			if value == "" {
+				value = field.Tag.Get("default")
+			}
+			if value == "" {
+				if !isOptional {
+					errs = append(errs, fmt.Errorf("missing env variable %s", envTag))
+				}
 				continue
 			}
 		}
 
 		f := v.FieldByName(field.Name)
+
+		if f.Type() == reflect.TypeOf(time.Duration(0)) {
+			duration, err := time.ParseDuration(value)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("env variable %s invalid value %q, expected type time.Duration", envTag, value))
+				continue
+			}
+			f.Set(reflect.ValueOf(duration))
+			continue
+		}
+
 		switch kind {
 		case reflect.Int:
 			valueInt, err := strconv.Atoi(value)
