@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,55 +96,79 @@ func TestRepo(t *testing.T) {
 	r := newTestRepo(t)
 	ctx := context.Background()
 
-	if err := r.CreateMany(ctx, []Lesson{testLesson("a"), testLesson("b")}); err != nil {
-		t.Fatalf("CreateMany: %v", err)
+	if err := r.Apply(ctx, Changes{Added: []Lesson{testLesson("a"), testLesson("b")}}); err != nil {
+		t.Fatalf("Apply: %v", err)
 	}
 
-	t.Run("FilterNew drops existing", func(t *testing.T) {
-		got, err := r.FilterNew(ctx, []Lesson{testLesson("a"), testLesson("c"), testLesson("b"), testLesson("d")})
+	t.Run("ListFrom filters by start_at", func(t *testing.T) {
+		got, err := r.ListFrom(ctx, testLesson("a").StartAt.Add(time.Minute))
 		if err != nil {
-			t.Fatalf("FilterNew: %v", err)
-		}
-		if want := []string{"c", "d"}; !slices.Equal(ids(got), want) {
-			t.Errorf("FilterNew ids = %v, want %v", ids(got), want)
-		}
-	})
-
-	t.Run("FilterNew empty input", func(t *testing.T) {
-		got, err := r.FilterNew(ctx, nil)
-		if err != nil {
-			t.Fatalf("FilterNew: %v", err)
+			t.Fatalf("ListFrom: %v", err)
 		}
 		if len(got) != 0 {
-			t.Errorf("FilterNew = %v, want empty", got)
+			t.Errorf("ListFrom = %v, want empty", ids(got))
+		}
+
+		got, err = r.ListFrom(ctx, testLesson("a").StartAt)
+		if err != nil {
+			t.Fatalf("ListFrom: %v", err)
+		}
+		slices.SortFunc(got, func(a, b Lesson) int { return strings.Compare(a.ID, b.ID) })
+		if want := []string{"a", "b"}; !slices.Equal(ids(got), want) {
+			t.Errorf("ListFrom ids = %v, want %v", ids(got), want)
 		}
 	})
 
-	t.Run("CreateMany ignores duplicates", func(t *testing.T) {
-		changed := testLesson("a")
-		changed.Room = "999"
-		if err := r.CreateMany(ctx, []Lesson{changed, testLesson("e")}); err != nil {
-			t.Fatalf("CreateMany: %v", err)
+	t.Run("Apply ignores duplicate added", func(t *testing.T) {
+		dup := testLesson("a")
+		dup.Room = "999"
+		if err := r.Apply(ctx, Changes{Added: []Lesson{dup, testLesson("e")}}); err != nil {
+			t.Fatalf("Apply: %v", err)
 		}
 
-		var got []Lesson
-		if err := r.db.WithContext(ctx).Order("id").Find(&got).Error; err != nil {
-			t.Fatalf("select: %v", err)
-		}
+		got := listAll(t, r)
 		if want := []string{"a", "b", "e"}; !slices.Equal(ids(got), want) {
 			t.Fatalf("ids = %v, want %v", ids(got), want)
 		}
-		if got[0].Room != "309" {
-			t.Errorf("Room = %q, want existing row untouched", got[0].Room)
-		}
-		if !got[0].StartAt.Equal(testLesson("a").StartAt) {
-			t.Errorf("StartAt = %v, want %v", got[0].StartAt, testLesson("a").StartAt)
+		if !got[0].Equal(testLesson("a")) {
+			t.Errorf("got %+v, want existing row untouched", got[0])
 		}
 	})
 
-	t.Run("CreateMany empty input", func(t *testing.T) {
-		if err := r.CreateMany(ctx, nil); err != nil {
-			t.Errorf("CreateMany(nil) = %v, want nil", err)
+	t.Run("Apply updates changed and deletes canceled", func(t *testing.T) {
+		changed := testLesson("b")
+		changed.Room = ""
+		changed.Teacher = "new teacher"
+		err := r.Apply(ctx, Changes{
+			Changed:  []Change{{Old: testLesson("b"), New: changed}},
+			Canceled: []Lesson{testLesson("e")},
+		})
+		if err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+
+		got := listAll(t, r)
+		if want := []string{"a", "b"}; !slices.Equal(ids(got), want) {
+			t.Fatalf("ids = %v, want %v", ids(got), want)
+		}
+		if !got[1].Equal(changed) {
+			t.Errorf("got %+v, want %+v", got[1], changed)
 		}
 	})
+
+	t.Run("Apply empty changes", func(t *testing.T) {
+		if err := r.Apply(ctx, Changes{}); err != nil {
+			t.Errorf("Apply(empty) = %v, want nil", err)
+		}
+	})
+}
+
+func listAll(t *testing.T, r *Repo) []Lesson {
+	t.Helper()
+
+	var lessons []Lesson
+	if err := r.db.Order("id").Find(&lessons).Error; err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	return lessons
 }

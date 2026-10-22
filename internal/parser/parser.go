@@ -19,9 +19,9 @@ import (
 	"golang.org/x/net/html/atom"
 )
 
-var minsk = time.FixedZone("Europe/Minsk", 3*60*60)
-
 const lessonDuration = 80 * time.Minute
+
+var TZ = time.FixedZone("Europe/Minsk", 3*60*60)
 
 var kinds = map[string]lessons.Kind{
 	"Лекция": lessons.KindLecture,
@@ -107,7 +107,7 @@ func parse(r io.Reader) ([]lessons.Lesson, error) {
 			if len(fields) == 0 {
 				return nil, errors.New("empty date header")
 			}
-			day, err = time.ParseInLocation("02.01.2006", fields[0], minsk)
+			day, err = time.ParseInLocation("02.01.2006", fields[0], TZ)
 			if err != nil {
 				return nil, fmt.Errorf("parse date %q: %w", fields[0], err)
 			}

@@ -36,7 +36,7 @@ func TestParse(t *testing.T) {
 	}
 
 	at := func(day, clock string) time.Time {
-		ts, err := time.ParseInLocation("02.01.2006 15:04", day+" "+clock, minsk)
+		ts, err := time.ParseInLocation("02.01.2006 15:04", day+" "+clock, TZ)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +144,7 @@ func TestParse(t *testing.T) {
 }
 
 func TestLessonID(t *testing.T) {
-	start := time.Date(2026, 10, 12, 8, 30, 0, 0, minsk)
+	start := time.Date(2026, 10, 12, 8, 30, 0, 0, TZ)
 	l := lessons.Lesson{StartAt: start, Subject: "Физика", Room: "309"}
 
 	sameInstant := l

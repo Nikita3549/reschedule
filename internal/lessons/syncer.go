@@ -2,16 +2,20 @@ package lessons
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 )
+
+var ErrEmptySchedule = errors.New("empty fetched lessons slice")
 
 type Fetcher interface {
 	Fetch(ctx context.Context) ([]Lesson, error)
 }
 
 type Storer interface {
-	FilterNew(ctx context.Context, lessons []Lesson) ([]Lesson, error)
-	CreateMany(ctx context.Context, lessons []Lesson) error
+	ListFrom(ctx context.Context, from time.Time) ([]Lesson, error)
+	Apply(ctx context.Context, ch Changes) error
 }
 
 type Syncer struct {
@@ -26,20 +30,33 @@ func NewSyncer(repo Storer, f Fetcher) *Syncer {
 	}
 }
 
-func (s *Syncer) Sync(ctx context.Context) (err error) {
-	lessons, err := s.fetcher.Fetch(ctx)
+func (s *Syncer) Sync(ctx context.Context) error {
+	fetched, err := s.fetcher.Fetch(ctx)
 	if err != nil {
 		return fmt.Errorf("fetch: %w", err)
 	}
 
-	newLessons, err := s.repo.FilterNew(ctx, lessons)
-	if err != nil {
-		return fmt.Errorf("filter: %w", err)
+	if len(fetched) == 0 {
+		return ErrEmptySchedule
 	}
 
-	err = s.repo.CreateMany(ctx, newLessons)
+	now := time.Now()
+	stored, err := s.repo.ListFrom(ctx, now)
 	if err != nil {
-		return fmt.Errorf("create: %w", err)
+		return fmt.Errorf("load stored: %w", err)
+	}
+
+	var upcoming []Lesson
+	for _, l := range fetched {
+		if l.StartAt.After(now) {
+			upcoming = append(upcoming, l)
+		}
+	}
+
+	changes := Diff(stored, upcoming)
+
+	if err := s.repo.Apply(ctx, changes); err != nil {
+		return fmt.Errorf("apply changes: %w", err)
 	}
 	return nil
 }

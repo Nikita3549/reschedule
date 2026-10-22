@@ -36,3 +36,14 @@ type Lesson struct {
 func (Lesson) TableName() string {
 	return "lessons"
 }
+
+type Change struct {
+	Old Lesson
+	New Lesson
+}
+
+type Changes struct {
+	Added    []Lesson
+	Canceled []Lesson
+	Changed  []Change
+}

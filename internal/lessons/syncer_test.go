@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 )
 
 type fakeFetcher struct {
@@ -17,31 +18,47 @@ func (f *fakeFetcher) Fetch(context.Context) ([]Lesson, error) {
 }
 
 type fakeStore struct {
-	fresh     []Lesson
-	filterErr error
-	createErr error
+	stored   []Lesson
+	listErr  error
+	applyErr error
 
-	filtered []Lesson
-	created  []Lesson
-	calls    []string
+	applied Changes
+	calls   []string
 }
 
-func (s *fakeStore) FilterNew(_ context.Context, lessons []Lesson) ([]Lesson, error) {
-	s.calls = append(s.calls, "FilterNew")
-	s.filtered = lessons
-	return s.fresh, s.filterErr
+func (s *fakeStore) ListFrom(context.Context, time.Time) ([]Lesson, error) {
+	s.calls = append(s.calls, "ListFrom")
+	return s.stored, s.listErr
 }
 
-func (s *fakeStore) CreateMany(_ context.Context, lessons []Lesson) error {
-	s.calls = append(s.calls, "CreateMany")
-	s.created = lessons
-	return s.createErr
+func (s *fakeStore) Apply(_ context.Context, ch Changes) error {
+	s.calls = append(s.calls, "Apply")
+	s.applied = ch
+	return s.applyErr
+}
+
+func futureLesson(id string) Lesson {
+	start := time.Now().Add(24 * time.Hour).Truncate(time.Minute)
+	l := testLesson(id)
+	l.StartAt = start
+	l.EndAt = start.Add(80 * time.Minute)
+	return l
 }
 
 func TestSyncerSync(t *testing.T) {
-	fetched := []Lesson{{ID: "a"}, {ID: "b"}, {ID: "c"}}
-	fresh := []Lesson{{ID: "c"}}
+	kept := futureLesson("kept")
+	canceled := futureLesson("canceled")
+	added := futureLesson("added")
+	old := futureLesson("changed")
+	changed := old
+	changed.Room = "101"
+	past := testLesson("past")
+
+	stored := []Lesson{kept, canceled, old}
+	fetched := []Lesson{kept, added, changed, past}
 	errBoom := errors.New("boom")
+
+	all := []string{"ListFrom", "Apply"}
 
 	tests := []struct {
 		name      string
@@ -51,10 +68,10 @@ func TestSyncerSync(t *testing.T) {
 		wantCalls []string
 	}{
 		{
-			name:      "creates only fresh lessons",
+			name:      "applies diff of future lessons",
 			fetcher:   &fakeFetcher{lessons: fetched},
-			store:     &fakeStore{fresh: fresh},
-			wantCalls: []string{"FilterNew", "CreateMany"},
+			store:     &fakeStore{stored: stored},
+			wantCalls: all,
 		},
 		{
 			name:      "fetch error stops sync",
@@ -64,19 +81,25 @@ func TestSyncerSync(t *testing.T) {
 			wantCalls: nil,
 		},
 		{
-			name:      "filter error stops sync",
+			name:      "list error stops sync",
 			fetcher:   &fakeFetcher{lessons: fetched},
-			store:     &fakeStore{filterErr: errBoom},
+			store:     &fakeStore{listErr: errBoom},
 			wantErr:   errBoom,
-			wantCalls: []string{"FilterNew"},
+			wantCalls: all[:1],
 		},
 		{
-			name:      "create error is returned",
+			name:      "apply error is returned",
 			fetcher:   &fakeFetcher{lessons: fetched},
-			store:     &fakeStore{fresh: fresh, createErr: errBoom},
+			store:     &fakeStore{stored: stored, applyErr: errBoom},
 			wantErr:   errBoom,
-			wantCalls: []string{"FilterNew", "CreateMany"},
+			wantCalls: all,
 		},
+	}
+
+	want := Changes{
+		Added:    []Lesson{added},
+		Canceled: []Lesson{canceled},
+		Changed:  []Change{{Old: old, New: changed}},
 	}
 
 	for _, tt := range tests {
@@ -93,11 +116,8 @@ func TestSyncerSync(t *testing.T) {
 			if tt.wantErr != nil {
 				return
 			}
-			if !reflect.DeepEqual(tt.store.filtered, fetched) {
-				t.Errorf("FilterNew got %v, want %v", tt.store.filtered, fetched)
-			}
-			if !reflect.DeepEqual(tt.store.created, fresh) {
-				t.Errorf("CreateMany got %v, want %v", tt.store.created, fresh)
+			if !reflect.DeepEqual(tt.store.applied, want) {
+				t.Errorf("Apply got %+v, want %+v", tt.store.applied, want)
 			}
 		})
 	}

@@ -3,6 +3,7 @@ package lessons
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -16,45 +17,69 @@ func NewRepo(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
-func (r *Repo) FilterNew(ctx context.Context, lessons []Lesson) ([]Lesson, error) {
-	if len(lessons) == 0 {
-		return nil, nil
-	}
+func (r *Repo) ListFrom(ctx context.Context, from time.Time) ([]Lesson, error) {
+	var lessons []Lesson
 
-	ids := make([]string, 0, len(lessons))
-	for _, l := range lessons {
-		ids = append(ids, l.ID)
-	}
-
-	var existing []string
 	err := r.db.WithContext(ctx).
-		Model(&Lesson{}).
-		Where("id IN ?", ids).
-		Pluck("id", &existing).Error
+		Where("start_at >= ?", from).
+		Find(&lessons).Error
 	if err != nil {
-		return nil, fmt.Errorf("select existing lesson ids: %w", err)
+		return nil, fmt.Errorf("list lessons from %s: %w", from, err)
 	}
 
-	exists := make(map[string]struct{}, len(existing))
-	for _, id := range existing {
-		exists[id] = struct{}{}
-	}
-
-	var fresh []Lesson
-	for _, l := range lessons {
-		if _, ok := exists[l.ID]; !ok {
-			fresh = append(fresh, l)
-		}
-	}
-
-	return fresh, nil
+	return lessons, nil
 }
 
-func (r *Repo) CreateMany(ctx context.Context, lessons []Lesson) error {
+func (r *Repo) Apply(ctx context.Context, ch Changes) error {
+	updated := make([]Lesson, 0, len(ch.Changed))
+	for _, c := range ch.Changed {
+		updated = append(updated, c.New)
+	}
+
+	canceledIDs := make([]string, 0, len(ch.Canceled))
+	for _, l := range ch.Canceled {
+		canceledIDs = append(canceledIDs, l.ID)
+	}
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := createMany(tx, ch.Added); err != nil {
+			return err
+		}
+		if err := updateMany(tx, updated); err != nil {
+			return err
+		}
+		return deleteMany(tx, canceledIDs)
+	})
+}
+
+func createMany(tx *gorm.DB, lessons []Lesson) error {
 	if len(lessons) == 0 {
 		return nil
 	}
-	return r.db.WithContext(ctx).
-		Clauses(clause.OnConflict{DoNothing: true}).
-		Create(&lessons).Error
+	err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&lessons).Error
+	if err != nil {
+		return fmt.Errorf("create %d lessons: %w", len(lessons), err)
+	}
+	return nil
+}
+
+func updateMany(tx *gorm.DB, lessons []Lesson) error {
+	for _, l := range lessons {
+		err := tx.Model(&Lesson{}).Where("id = ?", l.ID).Select("*").Updates(l).Error
+		if err != nil {
+			return fmt.Errorf("update lesson %s: %w", l.ID, err)
+		}
+	}
+	return nil
+}
+
+func deleteMany(tx *gorm.DB, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	err := tx.Where("id IN ?", ids).Delete(&Lesson{}).Error
+	if err != nil {
+		return fmt.Errorf("delete many lessons %v: %w", ids, err)
+	}
+	return nil
 }
