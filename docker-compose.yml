@@ -37,6 +37,9 @@ services:
       context: .
     container_name: reschedule-bot
     restart: always
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
     profiles:
       - bot
     volumes:
