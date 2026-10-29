@@ -23,6 +23,11 @@ import (
 type Config struct {
 	*DBConfig
 	*ParserConfig
+	*TelegramConfig
+}
+
+type TelegramConfig struct {
+	Token string `env:"TELEGRAM_TOKEN"`
 }
 
 type ParserConfig struct {

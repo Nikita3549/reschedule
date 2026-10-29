@@ -2,6 +2,8 @@ package lessons
 
 import "time"
 
+var TZ = time.FixedZone("Europe/Minsk", 3*60*60)
+
 type Kind string
 
 const (
@@ -46,4 +48,8 @@ type Changes struct {
 	Added    []Lesson
 	Canceled []Lesson
 	Changed  []Change
+}
+
+func (c Changes) Empty() bool {
+	return len(c.Added) == 0 && len(c.Canceled) == 0 && len(c.Changed) == 0
 }

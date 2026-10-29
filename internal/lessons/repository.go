@@ -17,6 +17,17 @@ func NewRepo(db *gorm.DB) *Repo {
 	return &Repo{db: db}
 }
 
+func (r *Repo) IsEmpty(ctx context.Context) (bool, error) {
+	var ids []string
+
+	err := r.db.WithContext(ctx).Model(&Lesson{}).Limit(1).Pluck("id", &ids).Error
+	if err != nil {
+		return false, fmt.Errorf("check lessons empty: %w", err)
+	}
+
+	return len(ids) == 0, nil
+}
+
 func (r *Repo) ListFrom(ctx context.Context, from time.Time) ([]Lesson, error) {
 	var lessons []Lesson
 

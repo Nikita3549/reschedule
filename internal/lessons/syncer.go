@@ -14,19 +14,26 @@ type Fetcher interface {
 }
 
 type Storer interface {
+	IsEmpty(ctx context.Context) (bool, error)
 	ListFrom(ctx context.Context, from time.Time) ([]Lesson, error)
 	Apply(ctx context.Context, ch Changes) error
 }
 
-type Syncer struct {
-	repo    Storer
-	fetcher Fetcher
+type Notifier interface {
+	Notify(ctx context.Context, ch Changes) error
 }
 
-func NewSyncer(repo Storer, f Fetcher) *Syncer {
+type Syncer struct {
+	repo     Storer
+	fetcher  Fetcher
+	notifier Notifier
+}
+
+func NewSyncer(repo Storer, f Fetcher, n Notifier) *Syncer {
 	return &Syncer{
-		repo:    repo,
-		fetcher: f,
+		repo:     repo,
+		fetcher:  f,
+		notifier: n,
 	}
 }
 
@@ -38,6 +45,11 @@ func (s *Syncer) Sync(ctx context.Context) error {
 
 	if len(fetched) == 0 {
 		return ErrEmptySchedule
+	}
+
+	bootstrap, err := s.repo.IsEmpty(ctx)
+	if err != nil {
+		return fmt.Errorf("check bootstrap: %w", err)
 	}
 
 	now := time.Now()
@@ -57,6 +69,13 @@ func (s *Syncer) Sync(ctx context.Context) error {
 
 	if err := s.repo.Apply(ctx, changes); err != nil {
 		return fmt.Errorf("apply changes: %w", err)
+	}
+
+	if bootstrap || changes.Empty() {
+		return nil
+	}
+	if err := s.notifier.Notify(ctx, changes); err != nil {
+		return fmt.Errorf("notify: %w", err)
 	}
 	return nil
 }
