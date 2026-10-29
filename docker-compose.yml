@@ -1,11 +1,11 @@
 services:
   db:
     image: postgres:17-alpine
-    container_name: rescheduler-db
+    container_name: reschedule-db
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_DB: ${DB_NAME:-rescheduler}
+      POSTGRES_DB: ${DB_NAME:-reschedule}
     volumes:
       - db-data:/var/lib/postgresql/data
     ports:
@@ -14,7 +14,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -h localhost -U ${DB_USER:-postgres} -d ${DB_NAME:-rescheduler}",
+          "pg_isready -h localhost -U ${DB_USER:-postgres} -d ${DB_NAME:-escheduler}",
         ]
       interval: 5s
       timeout: 5s
@@ -26,9 +26,9 @@ services:
       - ./migrations:/migrations:ro
     command:
       - -path=/migrations
-      - -database=postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-rescheduler}?sslmode=disable
+      - -database=postgres://${DB_USER:-postgres}:${DB_PASSWORD:-postgres}@db:5432/${DB_NAME:-reschedule}?sslmode=disable
       - up
-    container_name: rescheduler-migrate
+    container_name: reschedule-migrate
     depends_on:
       db:
         condition: service_healthy
