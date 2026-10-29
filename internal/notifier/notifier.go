@@ -29,7 +29,7 @@ type Notifier struct {
 func New(token string, s UserStorer) (*Notifier, error) {
 	n := &Notifier{users: s}
 
-	b, err := bot.New(token, bot.WithMessageTextHandler("/start", bot.MatchTypeCommandStartOnly, n.handleStart))
+	b, err := bot.New(token, bot.WithMessageTextHandler("start", bot.MatchTypeCommandStartOnly, n.handleStart))
 	if err != nil {
 		return nil, fmt.Errorf("init telegram bot: %w", err)
 	}
