@@ -68,6 +68,14 @@ func formatCanceled(ls []lessons.Lesson) []string {
 	return pack(header, dayBlocks(groupByDay(ls), "~"))
 }
 
+func formatDaily(ls []lessons.Lesson) []string {
+	if len(ls) == 0 {
+		return nil
+	}
+
+	return pack("🗓 *Расписание на завтра*", dayBlocks(groupByDay(ls), "*"))
+}
+
 func formatChanged(changes []lessons.Change) []string {
 	sorted := slices.SortedFunc(slices.Values(changes), func(a, b lessons.Change) int {
 		return a.New.StartAt.Compare(b.New.StartAt)

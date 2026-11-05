@@ -128,6 +128,40 @@ func TestFormatCanceled(t *testing.T) {
 	}
 }
 
+func TestFormatDaily(t *testing.T) {
+	tests := []struct {
+		name    string
+		lessons []lessons.Lesson
+		want    []string
+	}{
+		{
+			name: "no lessons",
+		},
+		{
+			name: "sorted lessons",
+			lessons: []lessons.Lesson{
+				lessonAt(12, 10, 5, "Физика"),
+				lessonAt(12, 8, 30, "Матан"),
+			},
+			want: []string{"🗓 *Расписание на завтра*\n\n" +
+				"*Понедельник, 12 октября*\n" +
+				"`08:30–09:50` *Матан*\n" +
+				"Лекция · м5, ауд\\. 309 · Иванов И\\.И\\.\n\n" +
+				"`10:05–11:25` *Физика*\n" +
+				"Лекция · м5, ауд\\. 309 · Иванов И\\.И\\."},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatDaily(tt.lessons)
+			if strings.Join(got, "\n---\n") != strings.Join(tt.want, "\n---\n") {
+				t.Errorf("formatDaily() =\n%q\nwant\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestFormatChanged(t *testing.T) {
 	old := lessonAt(12, 8, 30, "Матан")
 	moved := old

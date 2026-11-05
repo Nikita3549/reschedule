@@ -9,6 +9,7 @@ import (
 
 	"reschedule/internal/config"
 	"reschedule/internal/db"
+	"reschedule/internal/digest"
 	"reschedule/internal/lessons"
 	"reschedule/internal/notifier"
 	"reschedule/internal/parser"
@@ -27,19 +28,22 @@ func main() {
 	}
 
 	usersRepo := users.NewRepo(gormDB)
-	n, err := notifier.New(cfg.Token, usersRepo)
+	notifier, err := notifier.New(cfg.Token, usersRepo)
 	if err != nil {
 		log.Fatalf("create notifier: %v", err)
 	}
-	go n.Run(ctx)
+	go notifier.Run(ctx)
 
-	p := parser.New(cfg.ParserConfig)
+	parser := parser.New(cfg.ParserConfig)
 	lessonsRepo := lessons.NewRepo(gormDB)
 
-	s := lessons.NewSyncer(lessonsRepo, p, n)
+	sender := digest.New(lessonsRepo, notifier)
+	go sender.Run(ctx)
 
-	w := watcher.New(s)
+	syncer := lessons.NewSyncer(lessonsRepo, parser, notifier)
+
+	watcher := watcher.New(syncer)
 
 	log.Println("bot is running")
-	w.Run(ctx)
+	watcher.Run(ctx)
 }

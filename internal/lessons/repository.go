@@ -41,6 +41,19 @@ func (r *Repo) ListFrom(ctx context.Context, from time.Time) ([]Lesson, error) {
 	return lessons, nil
 }
 
+func (r *Repo) ListBetween(ctx context.Context, from, to time.Time) ([]Lesson, error) {
+	var lessons []Lesson
+
+	err := r.db.WithContext(ctx).
+		Where("start_at >= ? AND start_at < ?", from, to).
+		Find(&lessons).Error
+	if err != nil {
+		return nil, fmt.Errorf("list lessons between %s and %s: %w", from, to, err)
+	}
+
+	return lessons, nil
+}
+
 func (r *Repo) Apply(ctx context.Context, ch Changes) error {
 	updated := make([]Lesson, 0, len(ch.Changed))
 	for _, c := range ch.Changed {

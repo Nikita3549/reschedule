@@ -43,7 +43,14 @@ func (n *Notifier) Run(ctx context.Context) {
 }
 
 func (n *Notifier) Notify(ctx context.Context, ch lessons.Changes) error {
-	msgs := slices.Concat(formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added))
+	return n.broadcast(ctx, slices.Concat(formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added)))
+}
+
+func (n *Notifier) NotifyDaily(ctx context.Context, ls []lessons.Lesson) error {
+	return n.broadcast(ctx, formatDaily(ls))
+}
+
+func (n *Notifier) broadcast(ctx context.Context, msgs []string) error {
 	if len(msgs) == 0 {
 		return nil
 	}

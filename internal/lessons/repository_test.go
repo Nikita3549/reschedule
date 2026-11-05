@@ -119,6 +119,27 @@ func TestRepo(t *testing.T) {
 		}
 	})
 
+	t.Run("ListBetween excludes upper bound", func(t *testing.T) {
+		start := testLesson("a").StartAt
+
+		got, err := r.ListBetween(ctx, start.Add(-time.Minute), start)
+		if err != nil {
+			t.Fatalf("ListBetween: %v", err)
+		}
+		if len(got) != 0 {
+			t.Errorf("ListBetween = %v, want empty", ids(got))
+		}
+
+		got, err = r.ListBetween(ctx, start, start.Add(time.Minute))
+		if err != nil {
+			t.Fatalf("ListBetween: %v", err)
+		}
+		slices.SortFunc(got, func(a, b Lesson) int { return strings.Compare(a.ID, b.ID) })
+		if want := []string{"a", "b"}; !slices.Equal(ids(got), want) {
+			t.Errorf("ListBetween ids = %v, want %v", ids(got), want)
+		}
+	})
+
 	t.Run("Apply ignores duplicate added", func(t *testing.T) {
 		dup := testLesson("a")
 		dup.Room = "999"
