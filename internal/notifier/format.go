@@ -26,8 +26,18 @@ var kindNames = map[lessons.Kind]string{
 	lessons.KindSeminar:   "Семинар",
 	lessons.KindPractice:  "Практика",
 	lessons.KindLab:       "Лабораторная",
-	lessons.KindSelfStudy: "Контролируемая УСР",
+	lessons.KindSelfStudy: "УСР",
 }
+
+var kindIcons = map[lessons.Kind]string{
+	lessons.KindLecture:   "📖",
+	lessons.KindSeminar:   "📝",
+	lessons.KindPractice:  "📝",
+	lessons.KindLab:       "💻",
+	lessons.KindSelfStudy: "💻",
+}
+
+const daySeparator = "\n\n\\-\\-\\-\n\n"
 
 type day struct {
 	date    time.Time
@@ -52,7 +62,7 @@ func formatAdded(ls []lessons.Lesson) []string {
 		header = fmt.Sprintf("🗓 *Расписание на %s – %s*", bot.EscapeMarkdown(from.Format("02.01")), bot.EscapeMarkdown(to.Format("02.01")))
 	}
 
-	return pack(header, dayBlocks(days, "*"))
+	return pack(header, daySeparator, dayBlocks(days, "*"))
 }
 
 func formatCanceled(ls []lessons.Lesson) []string {
@@ -65,7 +75,7 @@ func formatCanceled(ls []lessons.Lesson) []string {
 		header = "❌ *Отменена пара*"
 	}
 
-	return pack(header, dayBlocks(groupByDay(ls), "~"))
+	return pack(header, daySeparator, dayBlocks(groupByDay(ls), "~"))
 }
 
 func formatDaily(ls []lessons.Lesson) []string {
@@ -73,7 +83,7 @@ func formatDaily(ls []lessons.Lesson) []string {
 		return nil
 	}
 
-	return pack("🗓 *Расписание на завтра*", dayBlocks(groupByDay(ls), "*"))
+	return pack("🗓 *Расписание на завтра:*", daySeparator, dayBlocks(groupByDay(ls), "*"))
 }
 
 func formatChanged(changes []lessons.Change) []string {
@@ -91,7 +101,7 @@ func formatChanged(changes []lessons.Change) []string {
 		return nil
 	}
 
-	return pack("✏️ *Изменения в расписании*", blocks)
+	return pack("✏️ *Изменения в расписании*", "\n\n", blocks)
 }
 
 func changeBlock(c lessons.Change) string {
@@ -128,32 +138,56 @@ func dayBlocks(days []day, subjectStyle string) []string {
 		for _, l := range d.lessons {
 			ls = append(ls, lessonBlock(l, subjectStyle))
 		}
-		blocks = append(blocks, fmt.Sprintf("*%s*\n%s", bot.EscapeMarkdown(longDate(d.date)), strings.Join(ls, "\n\n")))
+		blocks = append(blocks, fmt.Sprintf("📅 *%s*\n\n%s", bot.EscapeMarkdown(longDate(d.date)), strings.Join(ls, "\n\n")))
 	}
 	return blocks
 }
 
 func lessonBlock(l lessons.Lesson, subjectStyle string) string {
-	block := fmt.Sprintf("`%s` %s%s%s", timeRange(l), subjectStyle, bot.EscapeMarkdown(l.Subject), subjectStyle)
-	if details := lessonDetails(l); details != "" {
-		block += "\n" + bot.EscapeMarkdown(details)
+	marker, subject := "🔹", l.Subject
+	if l.Kind == lessons.KindSelfStudy {
+		marker, subject = "🟧", subject+" (УСР🏠)"
 	}
-	return block
+
+	lines := []string{fmt.Sprintf("%s *%s* \\| %s%s%s", marker, timeRange(l), subjectStyle, bot.EscapeMarkdown(subject), subjectStyle)}
+	if kind := kindNames[l.Kind]; kind != "" {
+		lines = append(lines, "— "+kindIcons[l.Kind]+" "+kind)
+	}
+	if place := lessonPlace(l); place != "" {
+		lines = append(lines, "— 📍 "+bot.EscapeMarkdown(place))
+	}
+	if l.Teacher != "" {
+		lines = append(lines, "— "+teacherIcon(l.Teacher)+" "+bot.EscapeMarkdown(l.Teacher))
+	}
+	return strings.Join(lines, "\n")
 }
 
-func lessonDetails(l lessons.Lesson) string {
-	place := string(l.Location)
-	if l.Room != "" {
-		place += ", ауд. " + l.Room
-	}
-
+func lessonPlace(l lessons.Lesson) string {
 	var parts []string
-	for _, p := range []string{kindNames[l.Kind], place, l.Teacher} {
-		if p != "" {
-			parts = append(parts, p)
-		}
+	switch l.Location {
+	case "":
+	case lessons.LocationOnline:
+		parts = append(parts, "Онлайн")
+	default:
+		parts = append(parts, "ул. "+string(l.Location))
 	}
-	return strings.Join(parts, " · ")
+	if l.Room != "" {
+		parts = append(parts, "ауд. "+l.Room)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func teacherIcon(teacher string) string {
+	switch {
+	case strings.Contains(teacher, ","):
+		return "👥"
+	case strings.HasSuffix(teacher, "вна"), strings.HasSuffix(teacher, "чна"):
+		return "👩🏼‍🏫"
+	case strings.HasSuffix(teacher, "ич"):
+		return "👨🏼‍🏫"
+	default:
+		return "👤"
+	}
 }
 
 func groupByDay(ls []lessons.Lesson) []day {
@@ -173,21 +207,23 @@ func groupByDay(ls []lessons.Lesson) []day {
 	return days
 }
 
-func pack(header string, blocks []string) []string {
+func pack(header, sep string, blocks []string) []string {
 	var (
 		msgs []string
 		b    strings.Builder
 	)
 	b.WriteString(header)
+	next := "\n\n"
 	for _, block := range blocks {
-		if b.Len() > 0 && utf8.RuneCountInString(b.String())+2+utf8.RuneCountInString(block) > maxMessageLen {
+		if b.Len() > 0 && utf8.RuneCountInString(b.String())+utf8.RuneCountInString(next)+utf8.RuneCountInString(block) > maxMessageLen {
 			msgs = append(msgs, b.String())
 			b.Reset()
 		}
 		if b.Len() > 0 {
-			b.WriteString("\n\n")
+			b.WriteString(next)
 		}
 		b.WriteString(block)
+		next = sep
 	}
 	return append(msgs, b.String())
 }
@@ -197,7 +233,7 @@ func sameDate(a, b time.Time) bool {
 }
 
 func timeRange(l lessons.Lesson) string {
-	return l.StartAt.In(lessons.TZ).Format("15:04") + "–" + l.EndAt.In(lessons.TZ).Format("15:04")
+	return l.StartAt.In(lessons.TZ).Format("15:04") + " – " + l.EndAt.In(lessons.TZ).Format("15:04")
 }
 
 func longDate(t time.Time) string {
