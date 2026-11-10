@@ -46,9 +46,19 @@ func newTestRepo(t *testing.T) *Repo {
 		t.Fatalf("open db: %v", err)
 	}
 
-	migration, err := os.ReadFile("../../migrations/000001_create_lessons.up.sql")
-	if err != nil {
-		t.Fatalf("read migration: %v", err)
+	stmts := []string{
+		"CREATE SCHEMA repo_test",
+		"SET LOCAL search_path TO repo_test",
+	}
+	for _, name := range []string{
+		"000001_create_lessons.up.sql",
+		"000003_add_hide_field_to_lessons.up.sql",
+	} {
+		migration, err := os.ReadFile("../../migrations/" + name)
+		if err != nil {
+			t.Fatalf("read migration %s: %v", name, err)
+		}
+		stmts = append(stmts, string(migration))
 	}
 
 	tx := gormDB.Begin()
@@ -57,11 +67,7 @@ func newTestRepo(t *testing.T) *Repo {
 	}
 	t.Cleanup(func() { tx.Rollback() })
 
-	for _, stmt := range []string{
-		"CREATE SCHEMA repo_test",
-		"SET LOCAL search_path TO repo_test",
-		string(migration),
-	} {
+	for _, stmt := range stmts {
 		if err := tx.Exec(stmt).Error; err != nil {
 			t.Fatalf("exec %q: %v", stmt, err)
 		}
@@ -180,6 +186,23 @@ func TestRepo(t *testing.T) {
 	t.Run("Apply empty changes", func(t *testing.T) {
 		if err := r.Apply(ctx, Changes{}); err != nil {
 			t.Errorf("Apply(empty) = %v, want nil", err)
+		}
+	})
+
+	t.Run("ListBetween skips hidden", func(t *testing.T) {
+		hidden := testLesson("h")
+		hidden.Hide = true
+		if err := r.Apply(ctx, Changes{Added: []Lesson{hidden}}); err != nil {
+			t.Fatalf("Apply: %v", err)
+		}
+
+		start := hidden.StartAt
+		got, err := r.ListBetween(ctx, start, start.Add(time.Minute))
+		if err != nil {
+			t.Fatalf("ListBetween: %v", err)
+		}
+		if slices.Contains(ids(got), "h") {
+			t.Errorf("ListBetween ids = %v, want without hidden", ids(got))
 		}
 	})
 }

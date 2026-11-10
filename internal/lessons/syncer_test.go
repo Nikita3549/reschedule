@@ -177,3 +177,25 @@ func TestSyncerSync(t *testing.T) {
 		})
 	}
 }
+
+func TestSyncerSyncHidden(t *testing.T) {
+	kept := futureLesson("kept")
+	hidden := futureLesson("hidden")
+	hidden.Subject = "Информационный час"
+
+	store := &fakeStore{stored: []Lesson{kept}}
+	n := &fakeNotifier{}
+	s := NewSyncer(store, &fakeFetcher{lessons: []Lesson{kept, hidden}}, n)
+
+	if err := s.Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+
+	hidden.Hide = true
+	if want := (Changes{Added: []Lesson{hidden}}); !reflect.DeepEqual(store.applied, want) {
+		t.Errorf("Apply got %+v, want %+v", store.applied, want)
+	}
+	if len(n.notified) != 0 {
+		t.Errorf("notified = %+v, want none", n.notified)
+	}
+}

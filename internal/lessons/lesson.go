@@ -33,6 +33,7 @@ type Lesson struct {
 	Room     string    `gorm:"column:room;not null"`
 	Location Location  `gorm:"column:location;not null"`
 	Teacher  string    `gorm:"column:teacher;not null"`
+	Hide     bool      `gorm:"column:hide;not null;"`
 }
 
 func (Lesson) TableName() string {
@@ -52,4 +53,24 @@ type Changes struct {
 
 func (c Changes) Empty() bool {
 	return len(c.Added) == 0 && len(c.Canceled) == 0 && len(c.Changed) == 0
+}
+
+func (c Changes) Visible() Changes {
+	var v Changes
+	for _, l := range c.Added {
+		if !l.Hide {
+			v.Added = append(v.Added, l)
+		}
+	}
+	for _, l := range c.Canceled {
+		if !l.Hide {
+			v.Canceled = append(v.Canceled, l)
+		}
+	}
+	for _, ch := range c.Changed {
+		if !ch.New.Hide {
+			v.Changed = append(v.Changed, ch)
+		}
+	}
+	return v
 }

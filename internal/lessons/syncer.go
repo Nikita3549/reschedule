@@ -9,6 +9,11 @@ import (
 
 var ErrEmptySchedule = errors.New("empty fetched lessons slice")
 
+var hiddenSubjects = map[string]struct{}{
+	"Доп. виды обучения \"Русский язык как иностранный\"": {},
+	"Информационный час": {},
+}
+
 type Fetcher interface {
 	Fetch(ctx context.Context) ([]Lesson, error)
 }
@@ -47,6 +52,8 @@ func (s *Syncer) Sync(ctx context.Context) error {
 		return ErrEmptySchedule
 	}
 
+	markHidden(fetched)
+
 	bootstrap, err := s.repo.IsEmpty(ctx)
 	if err != nil {
 		return fmt.Errorf("check bootstrap: %w", err)
@@ -71,11 +78,20 @@ func (s *Syncer) Sync(ctx context.Context) error {
 		return fmt.Errorf("apply changes: %w", err)
 	}
 
-	if bootstrap || changes.Empty() {
+	visible := changes.Visible()
+	if bootstrap || visible.Empty() {
 		return nil
 	}
-	if err := s.notifier.Notify(ctx, changes); err != nil {
+	if err := s.notifier.Notify(ctx, visible); err != nil {
 		return fmt.Errorf("notify: %w", err)
 	}
 	return nil
+}
+
+func markHidden(lessons []Lesson) {
+	for i := range lessons {
+		if _, ok := hiddenSubjects[lessons[i].Subject]; ok {
+			lessons[i].Hide = true
+		}
+	}
 }

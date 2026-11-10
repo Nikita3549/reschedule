@@ -45,7 +45,7 @@ func (r *Repo) ListBetween(ctx context.Context, from, to time.Time) ([]Lesson, e
 	var lessons []Lesson
 
 	err := r.db.WithContext(ctx).
-		Where("start_at >= ? AND start_at < ?", from, to).
+		Where("start_at >= ? AND start_at < ? AND hide = false", from, to).
 		Find(&lessons).Error
 	if err != nil {
 		return nil, fmt.Errorf("list lessons between %s and %s: %w", from, to, err)

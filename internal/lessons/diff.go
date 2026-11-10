@@ -42,5 +42,6 @@ func (l Lesson) Equal(o Lesson) bool {
 		l.Kind == o.Kind &&
 		l.Room == o.Room &&
 		l.Location == o.Location &&
-		l.Teacher == o.Teacher
+		l.Teacher == o.Teacher &&
+		l.Hide == o.Hide
 }
