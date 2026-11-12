@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	DefaultInterval = 5 * time.Minute
-	DefaultSpread   = 2 * time.Minute
+	DefaultInterval = 2 * time.Minute
+	DefaultSpread   = 1 * time.Minute
 )
 
 type Syncer interface {
