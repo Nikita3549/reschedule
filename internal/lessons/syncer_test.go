@@ -199,3 +199,53 @@ func TestSyncerSyncHidden(t *testing.T) {
 		t.Errorf("notified = %+v, want none", n.notified)
 	}
 }
+
+func TestAddEndShift(t *testing.T) {
+	testTime := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	emptyLesson := Lesson{}
+
+	tests := []struct {
+		name      string
+		subject   string
+		kind      Kind
+		wantEndAt time.Time
+	}{
+		{
+			name:      "known lesson shifted +5m",
+			subject:   "Алгоритмизация и программирование",
+			kind:      KindPractice,
+			wantEndAt: testTime.Add(5 * time.Minute),
+		},
+		{
+			name:      "unknown lessons unchanged",
+			subject:   "Test lesson",
+			kind:      KindLecture,
+			wantEndAt: testTime,
+		},
+		{
+			name:      "known lesson shifted -20m",
+			subject:   "Физическая культура",
+			kind:      KindPractice,
+			wantEndAt: testTime.Add(-20 * time.Minute),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lessons := []Lesson{emptyLesson, {
+				EndAt:   testTime,
+				Subject: tt.subject,
+				Kind:    tt.kind,
+			}, emptyLesson}
+
+			addEndShift(lessons)
+
+			if !lessons[0].Equal(emptyLesson) || !lessons[2].Equal(emptyLesson) {
+				t.Fatalf("affected other lessons = %+v, want = {%+v, ..., %+v}", lessons, emptyLesson, emptyLesson)
+			}
+			if !lessons[1].EndAt.Equal(tt.wantEndAt) {
+				t.Fatalf("endAt = %s, want %s", lessons[1].EndAt.Format("02.01.2006 15:04:05"), tt.wantEndAt.Format("02.01.2006 15:04:05"))
+			}
+		})
+	}
+}

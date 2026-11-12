@@ -14,6 +14,23 @@ var hiddenSubjects = map[string]struct{}{
 	"Информационный час": {},
 }
 
+type endShiftKey struct {
+	Kind    Kind
+	Subject string
+}
+
+var endShifts = map[endShiftKey]time.Duration{
+	{Kind: KindLab, Subject: "Алгоритмизация и программирование"}:      5 * time.Minute,
+	{Kind: KindPractice, Subject: "Алгоритмизация и программирование"}: 5 * time.Minute,
+	{Kind: KindPractice, Subject: "Физическая культура"}:               -20 * time.Minute,
+	{Kind: KindLecture, Subject: "Компьютерная графика"}:               5 * time.Minute,
+	{Kind: KindLab, Subject: "Компьютерная графика"}:                   5 * time.Minute,
+	{Kind: KindPractice, Subject: "Компьютерная графика"}:              5 * time.Minute,
+	{Kind: KindLecture, Subject: "Высшая математика"}:                  5 * time.Minute,
+	{Kind: KindLab, Subject: "Прикладная информатика"}:                 5 * time.Minute,
+	{Kind: KindPractice, Subject: "Прикладная информатика"}:            5 * time.Minute,
+}
+
 type Fetcher interface {
 	Fetch(ctx context.Context) ([]Lesson, error)
 }
@@ -53,6 +70,7 @@ func (s *Syncer) Sync(ctx context.Context) error {
 	}
 
 	markHidden(fetched)
+	addEndShift(fetched)
 
 	bootstrap, err := s.repo.IsEmpty(ctx)
 	if err != nil {
@@ -86,6 +104,14 @@ func (s *Syncer) Sync(ctx context.Context) error {
 		return fmt.Errorf("notify: %w", err)
 	}
 	return nil
+}
+
+func addEndShift(lessons []Lesson) {
+	for i := range lessons {
+		if shift, ok := endShifts[endShiftKey{Kind: lessons[i].Kind, Subject: lessons[i].Subject}]; ok {
+			lessons[i].EndAt = lessons[i].EndAt.Add(shift)
+		}
+	}
 }
 
 func markHidden(lessons []Lesson) {
