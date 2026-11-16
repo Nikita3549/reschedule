@@ -11,7 +11,8 @@ var ErrEmptySchedule = errors.New("empty fetched lessons slice")
 
 var hiddenSubjects = map[string]struct{}{
 	"Доп. виды обучения \"Русский язык как иностранный\"": {},
-	"Информационный час": {},
+	"Информационный час":                  {},
+	"Информационный час, Кураторский час": {},
 }
 
 type endShiftKey struct {
