@@ -37,7 +37,7 @@ type ParserConfig struct {
 type DBConfig struct {
 	Host     string `env:"DB_HOST" default:"localhost"`
 	Port     int    `env:"DB_PORT" default:"5432"`
-	Name     string `env:"DB_NAME" default:"rescheduler"`
+	Name     string `env:"DB_NAME" default:"reschedule"`
 	Password string `env:"DB_PASSWORD" default:"postgres"`
 	User     string `env:"DB_USER" default:"postgres"`
 }
