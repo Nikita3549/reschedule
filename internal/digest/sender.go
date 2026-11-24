@@ -6,17 +6,17 @@ import (
 	"log"
 	"time"
 
-	"reschedule/internal/lessons"
+	"reschedule/internal/lesson"
 )
 
 const DefaultHour = 20
 
 type Lister interface {
-	ListBetween(ctx context.Context, from, to time.Time) ([]lessons.Lesson, error)
+	ListBetween(ctx context.Context, from, to time.Time) ([]lesson.Lesson, error)
 }
 
 type Notifier interface {
-	NotifyDaily(ctx context.Context, ls []lessons.Lesson) error
+	NotifyDaily(ctx context.Context, ls []lesson.Lesson) error
 }
 
 type Sender struct {
@@ -76,14 +76,14 @@ func (s *Sender) send(ctx context.Context) error {
 }
 
 func tomorrow(now time.Time) time.Time {
-	t := now.In(lessons.TZ)
-	return time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, lessons.TZ)
+	t := now.In(lesson.TZ)
+	return time.Date(t.Year(), t.Month(), t.Day()+1, 0, 0, 0, 0, lesson.TZ)
 }
 
 func nextRun(now time.Time, hour int) time.Time {
-	t := now.In(lessons.TZ)
+	t := now.In(lesson.TZ)
 
-	run := time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, lessons.TZ)
+	run := time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, lesson.TZ)
 	if !run.After(now) {
 		run = run.AddDate(0, 0, 1)
 	}

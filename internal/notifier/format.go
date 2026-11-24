@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-telegram/bot"
 
-	"reschedule/internal/lessons"
+	"reschedule/internal/lesson"
 )
 
 const maxMessageLen = 4000
@@ -18,33 +18,35 @@ var weekdays = [...]string{"Воскресенье", "Понедельник", "
 
 var shortWeekdays = [...]string{"Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"}
 
-var months = [...]string{"", "января", "февраля", "марта", "апреля", "мая", "июня",
-	"июля", "августа", "сентября", "октября", "ноября", "декабря"}
-
-var kindNames = map[lessons.Kind]string{
-	lessons.KindLecture:   "Лекция",
-	lessons.KindSeminar:   "Семинар",
-	lessons.KindPractice:  "Практика",
-	lessons.KindLab:       "Лабораторная",
-	lessons.KindSelfStudy: "УСР",
+var months = [...]string{
+	"", "января", "февраля", "марта", "апреля", "мая", "июня",
+	"июля", "августа", "сентября", "октября", "ноября", "декабря",
 }
 
-var kindIcons = map[lessons.Kind]string{
-	lessons.KindLecture:   "📖",
-	lessons.KindSeminar:   "📝",
-	lessons.KindPractice:  "📝",
-	lessons.KindLab:       "💻",
-	lessons.KindSelfStudy: "💻",
+var kindNames = map[lesson.Kind]string{
+	lesson.KindLecture:   "Лекция",
+	lesson.KindSeminar:   "Семинар",
+	lesson.KindPractice:  "Практика",
+	lesson.KindLab:       "Лабораторная",
+	lesson.KindSelfStudy: "УСР",
+}
+
+var kindIcons = map[lesson.Kind]string{
+	lesson.KindLecture:   "📖",
+	lesson.KindSeminar:   "📝",
+	lesson.KindPractice:  "📝",
+	lesson.KindLab:       "💻",
+	lesson.KindSelfStudy: "💻",
 }
 
 const daySeparator = "\n\n\\-\\-\\-\n\n"
 
 type day struct {
 	date    time.Time
-	lessons []lessons.Lesson
+	lessons []lesson.Lesson
 }
 
-func formatAdded(ls []lessons.Lesson) []string {
+func formatAdded(ls []lesson.Lesson) []string {
 	if len(ls) == 0 {
 		return nil
 	}
@@ -65,7 +67,7 @@ func formatAdded(ls []lessons.Lesson) []string {
 	return pack(header, daySeparator, dayBlocks(days, "*"))
 }
 
-func formatCanceled(ls []lessons.Lesson) []string {
+func formatCanceled(ls []lesson.Lesson) []string {
 	if len(ls) == 0 {
 		return nil
 	}
@@ -78,7 +80,7 @@ func formatCanceled(ls []lessons.Lesson) []string {
 	return pack(header, daySeparator, dayBlocks(groupByDay(ls), "~"))
 }
 
-func formatDaily(ls []lessons.Lesson) []string {
+func formatDaily(ls []lesson.Lesson) []string {
 	if len(ls) == 0 {
 		return nil
 	}
@@ -86,8 +88,8 @@ func formatDaily(ls []lessons.Lesson) []string {
 	return pack("🗓 *Расписание на завтра:*", daySeparator, dayBlocks(groupByDay(ls), "*"))
 }
 
-func formatChanged(changes []lessons.Change) []string {
-	sorted := slices.SortedFunc(slices.Values(changes), func(a, b lessons.Change) int {
+func formatChanged(changes []lesson.Change) []string {
+	sorted := slices.SortedFunc(slices.Values(changes), func(a, b lesson.Change) int {
 		return a.New.StartAt.Compare(b.New.StartAt)
 	})
 
@@ -104,7 +106,7 @@ func formatChanged(changes []lessons.Change) []string {
 	return pack("✏️ *Изменения в расписании*", "\n\n", blocks)
 }
 
-func changeBlock(c lessons.Change) string {
+func changeBlock(c lesson.Change) string {
 	fields := []struct {
 		name     string
 		old, new string
@@ -143,9 +145,9 @@ func dayBlocks(days []day, subjectStyle string) []string {
 	return blocks
 }
 
-func lessonBlock(l lessons.Lesson, subjectStyle string) string {
+func lessonBlock(l lesson.Lesson, subjectStyle string) string {
 	marker, subject := "🔹", l.Subject
-	if l.Kind == lessons.KindSelfStudy {
+	if l.Kind == lesson.KindSelfStudy {
 		marker, subject = "🟧", subject+" (УСР🏠)"
 	}
 
@@ -162,11 +164,11 @@ func lessonBlock(l lessons.Lesson, subjectStyle string) string {
 	return strings.Join(lines, "\n")
 }
 
-func lessonPlace(l lessons.Lesson) string {
+func lessonPlace(l lesson.Lesson) string {
 	var parts []string
 	switch l.Location {
 	case "":
-	case lessons.LocationOnline:
+	case lesson.LocationOnline:
 		parts = append(parts, "Онлайн")
 	default:
 		parts = append(parts, "ул. "+string(l.Location))
@@ -190,19 +192,19 @@ func teacherIcon(teacher string) string {
 	}
 }
 
-func groupByDay(ls []lessons.Lesson) []day {
-	sorted := slices.SortedFunc(slices.Values(ls), func(a, b lessons.Lesson) int {
+func groupByDay(ls []lesson.Lesson) []day {
+	sorted := slices.SortedFunc(slices.Values(ls), func(a, b lesson.Lesson) int {
 		return a.StartAt.Compare(b.StartAt)
 	})
 
 	var days []day
 	for _, l := range sorted {
-		start := l.StartAt.In(lessons.TZ)
+		start := l.StartAt.In(lesson.TZ)
 		if n := len(days); n > 0 && sameDate(days[n-1].date, start) {
 			days[n-1].lessons = append(days[n-1].lessons, l)
 			continue
 		}
-		days = append(days, day{date: start, lessons: []lessons.Lesson{l}})
+		days = append(days, day{date: start, lessons: []lesson.Lesson{l}})
 	}
 	return days
 }
@@ -232,17 +234,17 @@ func sameDate(a, b time.Time) bool {
 	return a.Year() == b.Year() && a.YearDay() == b.YearDay()
 }
 
-func timeRange(l lessons.Lesson) string {
-	return l.StartAt.In(lessons.TZ).Format("15:04") + " – " + l.EndAt.In(lessons.TZ).Format("15:04")
+func timeRange(l lesson.Lesson) string {
+	return l.StartAt.In(lesson.TZ).Format("15:04") + " – " + l.EndAt.In(lesson.TZ).Format("15:04")
 }
 
 func longDate(t time.Time) string {
-	t = t.In(lessons.TZ)
+	t = t.In(lesson.TZ)
 	return fmt.Sprintf("%s, %d %s", weekdays[t.Weekday()], t.Day(), months[t.Month()])
 }
 
 func shortDate(t time.Time) string {
-	t = t.In(lessons.TZ)
+	t = t.In(lesson.TZ)
 	return fmt.Sprintf("%s, %d %s", shortWeekdays[t.Weekday()], t.Day(), months[t.Month()])
 }
 

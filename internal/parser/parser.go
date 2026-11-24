@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"reschedule/internal/config"
-	"reschedule/internal/lessons"
+	"reschedule/internal/lesson"
 
 	"golang.org/x/net/html"
 	"golang.org/x/net/html/atom"
@@ -21,18 +21,18 @@ import (
 
 const lessonDuration = 80 * time.Minute
 
-var kinds = map[string]lessons.Kind{
-	"Лекция": lessons.KindLecture,
-	"Практическое занятие": lessons.KindPractice,
-	"Семинар":                 lessons.KindSeminar,
-	"Лабораторная работа":     lessons.KindLab,
-	"Контролируемая УСР (ДО)": lessons.KindSelfStudy,
+var kinds = map[string]lesson.Kind{
+	"Лекция": lesson.KindLecture,
+	"Практическое занятие": lesson.KindPractice,
+	"Семинар":                 lesson.KindSeminar,
+	"Лабораторная работа":     lesson.KindLab,
+	"Контролируемая УСР (ДО)": lesson.KindSelfStudy,
 }
 
-var addresses = map[string]lessons.Location{
-	"ул. Московская 15а": lessons.LocationM15,
-	"ул. Московская 5":   lessons.LocationM5,
-	"ул. Обойная 7":      lessons.LocationOboynaya,
+var addresses = map[string]lesson.Location{
+	"ул. Московская 15а": lesson.LocationM15,
+	"ул. Московская 5":   lesson.LocationM5,
+	"ул. Обойная 7":      lesson.LocationOboynaya,
 }
 
 type Parser struct {
@@ -45,7 +45,7 @@ func New(config *config.ParserConfig) *Parser {
 	}
 }
 
-func (p *Parser) Fetch(ctx context.Context) ([]lessons.Lesson, error) {
+func (p *Parser) Fetch(ctx context.Context) ([]lesson.Lesson, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.URL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
@@ -69,11 +69,11 @@ func (p *Parser) Fetch(ctx context.Context) ([]lessons.Lesson, error) {
 }
 
 type row struct {
-	lesson   lessons.Lesson
+	lesson   lesson.Lesson
 	subgroup string
 }
 
-func parse(r io.Reader) ([]lessons.Lesson, error) {
+func parse(r io.Reader) ([]lesson.Lesson, error) {
 	doc, err := html.Parse(r)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func parse(r io.Reader) ([]lessons.Lesson, error) {
 			if len(fields) == 0 {
 				return nil, errors.New("empty date header")
 			}
-			day, err = time.ParseInLocation("02.01.2006", fields[0], lessons.TZ)
+			day, err = time.ParseInLocation("02.01.2006", fields[0], lesson.TZ)
 			if err != nil {
 				return nil, fmt.Errorf("parse date %q: %w", fields[0], err)
 			}
@@ -122,7 +122,7 @@ func parse(r io.Reader) ([]lessons.Lesson, error) {
 		rows = append(rows, rw)
 	}
 
-	result := make([]lessons.Lesson, 0, len(rows))
+	result := make([]lesson.Lesson, 0, len(rows))
 	for i := 0; i < len(rows); {
 		j := i + 1
 		for j < len(rows) && sameLesson(rows[i], rows[j]) {
@@ -160,7 +160,7 @@ func parseRow(day time.Time, cells []*html.Node) (row, error) {
 	location, room := parseRoom(text(cells[3]))
 
 	return row{
-		lesson: lessons.Lesson{
+		lesson: lesson.Lesson{
 			StartAt:  startAt,
 			EndAt:    startAt.Add(lessonDuration),
 			Subject:  subject,
@@ -192,12 +192,12 @@ func splitKind(s string) (subject, kind string) {
 	return s, ""
 }
 
-func parseRoom(s string) (lessons.Location, string) {
+func parseRoom(s string) (lesson.Location, string) {
 	switch s {
 	case "Онлайн, уч. портал":
-		return lessons.LocationOnline, ""
+		return lesson.LocationOnline, ""
 	case "ул. Щорса,5а, Спортивный комплекс":
-		return lessons.LocationShorsa, "Спортивный комплекс"
+		return lesson.LocationShorsa, "Спортивный комплекс"
 	}
 
 	i := strings.LastIndex(s, ",")
@@ -211,7 +211,7 @@ func parseRoom(s string) (lessons.Location, string) {
 	return location, strings.TrimSpace(s[i+1:])
 }
 
-func lessonID(l lessons.Lesson) string {
+func lessonID(l lesson.Lesson) string {
 	sum := sha256.Sum256([]byte(l.StartAt.UTC().Format(time.RFC3339) + "|" + l.Subject))
 	return hex.EncodeToString(sum[:])
 }
@@ -223,7 +223,7 @@ func sameLesson(a, b row) bool {
 		a.lesson.Kind == b.lesson.Kind
 }
 
-func merge(rows []row) lessons.Lesson {
+func merge(rows []row) lesson.Lesson {
 	lesson := rows[0].lesson
 	if rows[0].subgroup == "" {
 		return lesson

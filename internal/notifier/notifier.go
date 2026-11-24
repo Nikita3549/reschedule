@@ -10,15 +10,15 @@ import (
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
-	"reschedule/internal/lessons"
-	"reschedule/internal/users"
+	"reschedule/internal/lesson"
+	"reschedule/internal/user"
 )
 
 const startReply = "Вы подписались на уведомления об изменениях в расписании."
 
 type UserStorer interface {
-	Save(ctx context.Context, u users.User) error
-	List(ctx context.Context) ([]users.User, error)
+	Save(ctx context.Context, u user.User) error
+	List(ctx context.Context) ([]user.User, error)
 }
 
 type Notifier struct {
@@ -42,11 +42,11 @@ func (n *Notifier) Run(ctx context.Context) {
 	n.bot.Start(ctx)
 }
 
-func (n *Notifier) Notify(ctx context.Context, ch lessons.Changes) error {
+func (n *Notifier) Notify(ctx context.Context, ch lesson.Changes) error {
 	return n.broadcast(ctx, slices.Concat(formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added)))
 }
 
-func (n *Notifier) NotifyDaily(ctx context.Context, ls []lessons.Lesson) error {
+func (n *Notifier) NotifyDaily(ctx context.Context, ls []lesson.Lesson) error {
 	return n.broadcast(ctx, formatDaily(ls))
 }
 
@@ -87,7 +87,7 @@ func (n *Notifier) handleStart(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	u := users.User{
+	u := user.User{
 		ID:           msg.From.ID,
 		ChatID:       msg.Chat.ID,
 		Username:     msg.From.Username,

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"reschedule/internal/lessons"
+	"reschedule/internal/lesson"
 )
 
 func TestParse(t *testing.T) {
@@ -36,7 +36,7 @@ func TestParse(t *testing.T) {
 	}
 
 	at := func(day, clock string) time.Time {
-		ts, err := time.ParseInLocation("02.01.2006 15:04", day+" "+clock, lessons.TZ)
+		ts, err := time.ParseInLocation("02.01.2006 15:04", day+" "+clock, lesson.TZ)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,82 +45,82 @@ func TestParse(t *testing.T) {
 
 	tests := []struct {
 		name string
-		want lessons.Lesson
+		want lesson.Lesson
 	}{
 		{
 			name: "quotes and M15",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("12.10.2026", "08:30"),
 				Subject:  `Доп. виды обучения "Русский язык как иностранный"`,
-				Kind:     lessons.KindPractice,
+				Kind:     lesson.KindPractice,
 				Room:     "43",
-				Location: lessons.LocationM15,
+				Location: lesson.LocationM15,
 				Teacher:  "Толочко Дарья Андреевна",
 			},
 		},
 		{
 			name: "parentheses inside subject",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("12.10.2026", "10:10"),
 				Subject:  "Белорусский язык (проф. лексика)",
-				Kind:     lessons.KindPractice,
+				Kind:     lesson.KindPractice,
 				Room:     "309",
-				Location: lessons.LocationM5,
+				Location: lesson.LocationM5,
 				Teacher:  "Толочко Дарья Андреевна",
 			},
 		},
 		{
 			name: "shorsa",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("14.10.2026", "09:30"),
 				Subject:  "Физическая культура",
-				Kind:     lessons.KindPractice,
+				Kind:     lesson.KindPractice,
 				Room:     "Спортивный комплекс",
-				Location: lessons.LocationShorsa,
+				Location: lesson.LocationShorsa,
 				Teacher:  "Омелюсик Ольга Валентиновна, Платонова Елена Павловна, Федосюк Инга Валерьевна, Федюк Кристина Евгеньевна",
 			},
 		},
 		{
 			name: "subgroups merged",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("14.10.2026", "12:05"),
 				Subject:  "Иностранный язык",
-				Kind:     lessons.KindPractice,
+				Kind:     lesson.KindPractice,
 				Room:     "3 подгр. — 303 ауд., 4 подгр. — 310 ауд.",
-				Location: lessons.LocationOboynaya,
+				Location: lesson.LocationOboynaya,
 				Teacher:  "3 подгр. — Ларина Татьяна Викторовна, 4 подгр. — Вавилова Наталья Николаевна",
 			},
 		},
 		{
 			name: "lab",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("15.10.2026", "10:10"),
 				Subject:  "Компьютерная графика",
-				Kind:     lessons.KindLab,
+				Kind:     lesson.KindLab,
 				Room:     "403",
-				Location: lessons.LocationM5,
+				Location: lesson.LocationM5,
 				Teacher:  "Шемаров Александр Александрович",
 			},
 		},
 		{
 			name: "unknown kind",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("15.10.2026", "15:15"),
 				Subject:  "Информационный час",
 				Kind:     "",
 				Room:     "309",
-				Location: lessons.LocationM5,
+				Location: lesson.LocationM5,
 				Teacher:  "Ярошевич Андрей Олегович",
 			},
 		},
 		{
 			name: "self study online with nested parentheses",
-			want: lessons.Lesson{
+			want: lesson.Lesson{
 				StartAt:  at("17.10.2026", "15:15"),
 				Subject:  "Высшая математика",
-				Kind:     lessons.KindSelfStudy,
+				Kind:     lesson.KindSelfStudy,
 				Room:     "",
-				Location: lessons.LocationOnline,
+				Location: lesson.LocationOnline,
 				Teacher:  "Гапеева Ирина Александровна",
 			},
 		},
@@ -144,8 +144,8 @@ func TestParse(t *testing.T) {
 }
 
 func TestLessonID(t *testing.T) {
-	start := time.Date(2026, 10, 12, 8, 30, 0, 0, lessons.TZ)
-	l := lessons.Lesson{StartAt: start, Subject: "Физика", Room: "309"}
+	start := time.Date(2026, 10, 12, 8, 30, 0, 0, lesson.TZ)
+	l := lesson.Lesson{StartAt: start, Subject: "Физика", Room: "309"}
 
 	sameInstant := l
 	sameInstant.StartAt = start.UTC()

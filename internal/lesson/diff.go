@@ -1,4 +1,4 @@
-package lessons
+package lesson
 
 func Diff(stored, fetched []Lesson) Changes {
 	storedByID := make(map[string]Lesson, len(stored))

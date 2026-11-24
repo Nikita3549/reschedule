@@ -6,19 +6,19 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"reschedule/internal/lessons"
+	"reschedule/internal/lesson"
 )
 
-func lessonAt(day, hour, minute int, subject string) lessons.Lesson {
-	start := time.Date(2026, 10, day, hour, minute, 0, 0, lessons.TZ)
-	return lessons.Lesson{
+func lessonAt(day, hour, minute int, subject string) lesson.Lesson {
+	start := time.Date(2026, 10, day, hour, minute, 0, 0, lesson.TZ)
+	return lesson.Lesson{
 		ID:       subject,
 		StartAt:  start.UTC(),
 		EndAt:    start.Add(80 * time.Minute).UTC(),
 		Subject:  subject,
-		Kind:     lessons.KindLecture,
+		Kind:     lesson.KindLecture,
 		Room:     "309",
-		Location: lessons.LocationM5,
+		Location: lesson.LocationM5,
 		Teacher:  "Иванов Иван Иванович",
 	}
 }
@@ -26,7 +26,7 @@ func lessonAt(day, hour, minute int, subject string) lessons.Lesson {
 func TestFormatAdded(t *testing.T) {
 	tests := []struct {
 		name    string
-		lessons []lessons.Lesson
+		lessons []lesson.Lesson
 		want    []string
 	}{
 		{
@@ -34,7 +34,7 @@ func TestFormatAdded(t *testing.T) {
 		},
 		{
 			name:    "single lesson",
-			lessons: []lessons.Lesson{lessonAt(12, 8, 30, "Матан")},
+			lessons: []lesson.Lesson{lessonAt(12, 8, 30, "Матан")},
 			want: []string{"🆕 *Добавлена пара*\n\n" +
 				"📅 *Понедельник, 12 октября*\n\n" +
 				"🔹 *08:30 – 09:50* \\| *Матан*\n" +
@@ -42,7 +42,7 @@ func TestFormatAdded(t *testing.T) {
 		},
 		{
 			name: "one day sorted",
-			lessons: []lessons.Lesson{
+			lessons: []lesson.Lesson{
 				lessonAt(12, 10, 5, "Физика"),
 				lessonAt(12, 8, 30, "Матан"),
 			},
@@ -55,7 +55,7 @@ func TestFormatAdded(t *testing.T) {
 		},
 		{
 			name: "several days",
-			lessons: []lessons.Lesson{
+			lessons: []lesson.Lesson{
 				lessonAt(13, 8, 30, "Физика"),
 				lessonAt(12, 8, 30, "Матан"),
 			},
@@ -81,10 +81,10 @@ func TestFormatAdded(t *testing.T) {
 
 func TestFormatAddedEscapesAndOmitsEmptyRoom(t *testing.T) {
 	l := lessonAt(12, 8, 30, "Матем. анализ (часть 1)")
-	l.Location = lessons.LocationOnline
+	l.Location = lesson.LocationOnline
 	l.Room = ""
 
-	got := formatAdded([]lessons.Lesson{l})[0]
+	got := formatAdded([]lesson.Lesson{l})[0]
 
 	for _, want := range []string{"*Матем\\. анализ \\(часть 1\\)*", "— 📍 Онлайн\n"} {
 		if !strings.Contains(got, want) {
@@ -94,7 +94,7 @@ func TestFormatAddedEscapesAndOmitsEmptyRoom(t *testing.T) {
 }
 
 func TestFormatAddedSplitsLongMessages(t *testing.T) {
-	var ls []lessons.Lesson
+	var ls []lesson.Lesson
 	for d := 1; d <= 30; d++ {
 		for h := 8; h < 20; h += 2 {
 			ls = append(ls, lessonAt(d, h, 0, strings.Repeat("Очень длинный предмет ", 2)))
@@ -117,7 +117,7 @@ func TestFormatAddedSplitsLongMessages(t *testing.T) {
 }
 
 func TestFormatCanceled(t *testing.T) {
-	got := formatCanceled([]lessons.Lesson{lessonAt(12, 8, 30, "Матан")})
+	got := formatCanceled([]lesson.Lesson{lessonAt(12, 8, 30, "Матан")})
 
 	want := "❌ *Отменена пара*\n\n" +
 		"📅 *Понедельник, 12 октября*\n\n" +
@@ -131,7 +131,7 @@ func TestFormatCanceled(t *testing.T) {
 func TestFormatDaily(t *testing.T) {
 	tests := []struct {
 		name    string
-		lessons []lessons.Lesson
+		lessons []lesson.Lesson
 		want    []string
 	}{
 		{
@@ -139,7 +139,7 @@ func TestFormatDaily(t *testing.T) {
 		},
 		{
 			name: "sorted lessons",
-			lessons: []lessons.Lesson{
+			lessons: []lesson.Lesson{
 				lessonAt(12, 10, 5, "Физика"),
 				lessonAt(12, 8, 30, "Матан"),
 			},
@@ -172,7 +172,7 @@ func TestFormatChanged(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		changes []lessons.Change
+		changes []lesson.Change
 		want    []string
 	}{
 		{
@@ -180,7 +180,7 @@ func TestFormatChanged(t *testing.T) {
 		},
 		{
 			name:    "only changed fields",
-			changes: []lessons.Change{{Old: old, New: moved}},
+			changes: []lesson.Change{{Old: old, New: moved}},
 			want: []string{"✏️ *Изменения в расписании*\n\n" +
 				"*Пн, 12 октября* `08:30 – 09:50` *Матан*\n" +
 				"Аудитория: ~309~ → *101*\n" +
@@ -188,11 +188,11 @@ func TestFormatChanged(t *testing.T) {
 		},
 		{
 			name:    "no visible diff",
-			changes: []lessons.Change{{Old: unchanged, New: unchanged}},
+			changes: []lesson.Change{{Old: unchanged, New: unchanged}},
 		},
 		{
 			name: "empty value as dash",
-			changes: []lessons.Change{{Old: old, New: func() lessons.Lesson {
+			changes: []lesson.Change{{Old: old, New: func() lesson.Lesson {
 				l := old
 				l.Room = ""
 				return l
@@ -215,22 +215,22 @@ func TestFormatChanged(t *testing.T) {
 
 func TestLessonBlock(t *testing.T) {
 	selfStudy := lessonAt(12, 20, 10, "Прикладная информатика")
-	selfStudy.Kind = lessons.KindSelfStudy
-	selfStudy.Location = lessons.LocationOnline
+	selfStudy.Kind = lesson.KindSelfStudy
+	selfStudy.Location = lesson.LocationOnline
 	selfStudy.Room = ""
 
 	noKind := lessonAt(12, 15, 15, "Информационный час")
 	noKind.Kind = ""
 
 	subgroups := lessonAt(12, 12, 5, "Иностранный язык")
-	subgroups.Kind = lessons.KindPractice
-	subgroups.Location = lessons.LocationOboynaya
+	subgroups.Kind = lesson.KindPractice
+	subgroups.Location = lesson.LocationOboynaya
 	subgroups.Room = "3 подгр. — 303 ауд., 4 подгр. — 310 ауд."
 	subgroups.Teacher = "3 подгр. — Ларина Татьяна Викторовна, 4 подгр. — Вавилова Наталья Николаевна"
 
 	tests := []struct {
 		name   string
-		lesson lessons.Lesson
+		lesson lesson.Lesson
 		want   string
 	}{
 		{
