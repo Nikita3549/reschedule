@@ -162,6 +162,50 @@ func TestFormatDaily(t *testing.T) {
 	}
 }
 
+func TestFormatWeek(t *testing.T) {
+	got := formatWeek([]lesson.Lesson{
+		lessonAt(13, 8, 30, "Физика"),
+		lessonAt(12, 8, 30, "Матан"),
+	})
+
+	want := "🗓 *Расписание на неделю*\n\n" +
+		"📅 *Понедельник, 12 октября*\n\n" +
+		"🔹 *08:30 – 09:50* \\| *Матан*\n" +
+		"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович\n\n\\-\\-\\-\n\n" +
+		"📅 *Вторник, 13 октября*\n\n" +
+		"🔹 *08:30 – 09:50* \\| *Физика*\n" +
+		"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("formatWeek() = %q, want %q", got, want)
+	}
+
+	if got := formatWeek(nil); got != nil {
+		t.Errorf("formatWeek(nil) = %q, want nil", got)
+	}
+}
+
+func TestFormatWeekTruncatesAtDayBoundary(t *testing.T) {
+	first := strings.Repeat("А", 2200)
+	second := strings.Repeat("Б", 2200)
+	got := formatWeek([]lesson.Lesson{
+		lessonAt(12, 8, 30, first),
+		lessonAt(13, 8, 30, second),
+	})
+	if len(got) != 1 {
+		t.Fatalf("formatWeek() returned %d messages, want 1", len(got))
+	}
+	msg := got[0]
+	if n := utf8.RuneCountInString(msg); n > maxMessageLen {
+		t.Errorf("message has %d runes, max %d", n, maxMessageLen)
+	}
+	if !strings.Contains(msg, first) || strings.Contains(msg, "Вторник") {
+		t.Error("message should contain the first day in full and omit the second day")
+	}
+	if !strings.HasSuffix(msg, "⚠️ Превышен лимит сообщения") {
+		t.Error("message is missing the truncation notice")
+	}
+}
+
 func TestFormatChanged(t *testing.T) {
 	old := lessonAt(12, 8, 30, "Матан")
 	moved := old

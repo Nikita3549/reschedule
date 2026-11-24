@@ -1,6 +1,6 @@
 package lesson
 
-func Diff(stored, fetched []Lesson) Changes {
+func Diff(stored, fetched []Lesson, lessonIDsWithWeek map[string]struct{}) Changes {
 	storedByID := make(map[string]Lesson, len(stored))
 	for _, l := range stored {
 		storedByID[l.ID] = l
@@ -14,7 +14,11 @@ func Diff(stored, fetched []Lesson) Changes {
 	var changes Changes
 	for _, l := range fetched {
 		if _, ok := storedByID[l.ID]; !ok {
-			changes.Added = append(changes.Added, l)
+			if _, ok := lessonIDsWithWeek[l.ID]; ok {
+				changes.Added = append(changes.Added, l)
+				continue
+			}
+			changes.NewWeekLessons = append(changes.NewWeekLessons, l)
 		}
 	}
 	for _, l := range stored {

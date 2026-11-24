@@ -12,6 +12,7 @@ import (
 
 	"reschedule/internal/lesson"
 	"reschedule/internal/user"
+	"reschedule/internal/weekmsg"
 )
 
 const startReply = "Вы подписались на уведомления об изменениях в расписании."
@@ -21,13 +22,24 @@ type UserStorer interface {
 	List(ctx context.Context) ([]user.User, error)
 }
 
-type Notifier struct {
-	bot   *bot.Bot
-	users UserStorer
+type WeekMsgStorer interface {
+	CreateMany(ctx context.Context, wm []weekmsg.Message) error
 }
 
-func New(token string, s UserStorer) (*Notifier, error) {
-	n := &Notifier{users: s}
+type Notifier struct {
+	bot      *bot.Bot
+	users    UserStorer
+	weekMsgs WeekMsgStorer
+}
+
+type sentMessage struct {
+	ID     int
+	chatID int64
+	userID int64
+}
+
+func New(token string, s UserStorer, wm WeekMsgStorer) (*Notifier, error) {
+	n := &Notifier{users: s, weekMsgs: wm}
 
 	b, err := bot.New(token, bot.WithMessageTextHandler("start", bot.MatchTypeCommandStartOnly, n.handleStart))
 	if err != nil {
@@ -43,30 +55,74 @@ func (n *Notifier) Run(ctx context.Context) {
 }
 
 func (n *Notifier) Notify(ctx context.Context, ch lesson.Changes) error {
-	return n.broadcast(ctx, slices.Concat(formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added)))
+	_, err := n.broadcast(ctx, slices.Concat(formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added)))
+	return err
 }
 
 func (n *Notifier) NotifyDaily(ctx context.Context, ls []lesson.Lesson) error {
-	return n.broadcast(ctx, formatDaily(ls))
+	_, err := n.broadcast(ctx, formatDaily(ls))
+	return err
 }
 
-func (n *Notifier) broadcast(ctx context.Context, msgs []string) error {
+func (n *Notifier) PublishWeek(ctx context.Context, weekID string, ls []lesson.Lesson) error {
+	msgs, err := n.broadcast(ctx, formatWeek(ls))
+	if err != nil {
+		return fmt.Errorf("broadcast messages: %w", err)
+	}
+
+	var weekMsgs []weekmsg.Message
+	for _, msg := range msgs {
+		weekMsgs = append(weekMsgs, weekmsg.Message{
+			WeekID: weekID,
+			UserID: msg.userID,
+			MsgID:  msg.ID,
+			ChatID: msg.chatID,
+		})
+	}
+
+	err = n.weekMsgs.CreateMany(ctx, weekMsgs)
+	if err != nil {
+		return fmt.Errorf("save weekMsgs %d: %w", len(weekMsgs), err)
+	}
+
+	return err
+}
+
+func (n *Notifier) sendWeek(ctx context.Context, chatID int64, ls []lesson.Lesson) ([]int, error) {
+	msgs := formatWeek(ls)
+	ids := make([]int, 0, len(msgs))
+	for _, text := range msgs {
+		m, err := n.bot.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID:    chatID,
+			Text:      text,
+			ParseMode: models.ParseModeMarkdown,
+		})
+		if err != nil {
+			return ids, fmt.Errorf("send week to chat %d: %w", chatID, err)
+		}
+		ids = append(ids, m.ID)
+	}
+	return ids, nil
+}
+
+func (n *Notifier) broadcast(ctx context.Context, msgs []string) ([]sentMessage, error) {
 	if len(msgs) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	us, err := n.users.List(ctx)
 	if err != nil {
-		return fmt.Errorf("notify: %w", err)
+		return nil, fmt.Errorf("notify: %w", err)
 	}
 
+	var sent []sentMessage
 	var errs []error
 	for _, u := range us {
 		for _, text := range msgs {
 			if err := ctx.Err(); err != nil {
-				return err
+				return nil, err
 			}
-			_, err := n.bot.SendMessage(ctx, &bot.SendMessageParams{
+			msg, err := n.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID:    u.ChatID,
 				Text:      text,
 				ParseMode: models.ParseModeMarkdown,
@@ -75,10 +131,16 @@ func (n *Notifier) broadcast(ctx context.Context, msgs []string) error {
 				errs = append(errs, fmt.Errorf("send to user %d: %w", u.ID, err))
 				break
 			}
+
+			sent = append(sent, sentMessage{
+				ID:     msg.ID,
+				chatID: u.ChatID,
+				userID: u.ID,
+			})
 		}
 	}
 
-	return errors.Join(errs...)
+	return sent, errors.Join(errs...)
 }
 
 func (n *Notifier) handleStart(ctx context.Context, b *bot.Bot, update *models.Update) {

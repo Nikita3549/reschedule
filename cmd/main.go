@@ -15,6 +15,8 @@ import (
 	"reschedule/internal/parser"
 	"reschedule/internal/user"
 	"reschedule/internal/watcher"
+	"reschedule/internal/week"
+	"reschedule/internal/weekmsg"
 )
 
 func main() {
@@ -27,8 +29,10 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 
+	weekMsgRepo := weekmsg.NewRepo(gormDB)
 	usersRepo := user.NewRepo(gormDB)
-	notifier, err := notifier.New(cfg.Token, usersRepo)
+
+	notifier, err := notifier.New(cfg.Token, usersRepo, weekMsgRepo)
 	if err != nil {
 		log.Fatalf("create notifier: %v", err)
 	}
@@ -36,11 +40,12 @@ func main() {
 
 	parser := parser.New(cfg.ParserConfig)
 	lessonsRepo := lesson.NewRepo(gormDB)
+	weekRepo := week.NewRepo(gormDB)
 
 	sender := digest.New(lessonsRepo, notifier)
 	go sender.Run(ctx)
 
-	syncer := lesson.NewSyncer(lessonsRepo, parser, notifier)
+	syncer := lesson.NewSyncer(lessonsRepo, weekRepo, parser, notifier)
 
 	watcher := watcher.New(syncer)
 

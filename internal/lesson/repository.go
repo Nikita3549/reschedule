@@ -66,7 +66,7 @@ func (r *Repo) Apply(ctx context.Context, ch Changes) error {
 	}
 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := createMany(tx, ch.Added); err != nil {
+		if err := createMany(tx, append(ch.Added, ch.NewWeekLessons...)); err != nil {
 			return err
 		}
 		if err := updateMany(tx, updated); err != nil {

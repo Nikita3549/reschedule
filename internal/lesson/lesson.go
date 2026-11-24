@@ -46,12 +46,13 @@ type Change struct {
 }
 
 type Changes struct {
-	Added    []Lesson
-	Canceled []Lesson
-	Changed  []Change
+	NewWeekLessons []Lesson
+	Added          []Lesson
+	Canceled       []Lesson
+	Changed        []Change
 }
 
-func (c Changes) Empty() bool {
+func (c Changes) HasChangeAlerts() bool {
 	return len(c.Added) == 0 && len(c.Canceled) == 0 && len(c.Changed) == 0
 }
 
@@ -70,6 +71,11 @@ func (c Changes) Visible() Changes {
 	for _, ch := range c.Changed {
 		if !ch.New.Hide {
 			v.Changed = append(v.Changed, ch)
+		}
+	}
+	for _, l := range c.NewWeekLessons {
+		if !l.Hide {
+			v.NewWeekLessons = append(v.NewWeekLessons, l)
 		}
 	}
 	return v

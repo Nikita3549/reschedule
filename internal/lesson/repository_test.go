@@ -2,78 +2,18 @@ package lesson
 
 import (
 	"context"
-	"errors"
-	"io/fs"
-	"os"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/joho/godotenv"
-
-	"reschedule/internal/config"
-	"reschedule/internal/db"
+	"reschedule/internal/db/dbtest"
 )
-
-func testDSN(t *testing.T) (dsn string, explicit bool) {
-	t.Helper()
-
-	if dsn := os.Getenv("TEST_DB_DSN"); dsn != "" {
-		return dsn, true
-	}
-
-	if err := godotenv.Load("../../.env"); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		t.Fatalf("load .env: %v", err)
-	}
-
-	var cfg config.DBConfig
-	if errs := config.ParseConfig(&cfg); len(errs) > 0 {
-		t.Fatalf("parse db config: %v", errs)
-	}
-	return cfg.DSN(), false
-}
 
 func newTestRepo(t *testing.T) *Repo {
 	t.Helper()
 
-	dsn, explicit := testDSN(t)
-	gormDB, err := db.Open(dsn)
-	if err != nil {
-		if !explicit {
-			t.Skipf("db is unavailable: %v", err)
-		}
-		t.Fatalf("open db: %v", err)
-	}
-
-	stmts := []string{
-		"CREATE SCHEMA repo_test",
-		"SET LOCAL search_path TO repo_test",
-	}
-	for _, name := range []string{
-		"000001_create_lessons.up.sql",
-		"000003_add_hide_field_to_lessons.up.sql",
-	} {
-		migration, err := os.ReadFile("../../migrations/" + name)
-		if err != nil {
-			t.Fatalf("read migration %s: %v", name, err)
-		}
-		stmts = append(stmts, string(migration))
-	}
-
-	tx := gormDB.Begin()
-	if tx.Error != nil {
-		t.Fatalf("begin: %v", tx.Error)
-	}
-	t.Cleanup(func() { tx.Rollback() })
-
-	for _, stmt := range stmts {
-		if err := tx.Exec(stmt).Error; err != nil {
-			t.Fatalf("exec %q: %v", stmt, err)
-		}
-	}
-
-	return NewRepo(tx)
+	return NewRepo(dbtest.Tx(t))
 }
 
 func testLesson(id string) Lesson {

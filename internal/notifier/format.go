@@ -12,7 +12,7 @@ import (
 	"reschedule/internal/lesson"
 )
 
-const maxMessageLen = 4000
+const maxMessageLen = 4096
 
 var weekdays = [...]string{"Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 
@@ -86,6 +86,37 @@ func formatDaily(ls []lesson.Lesson) []string {
 	}
 
 	return pack("🗓 *Расписание на завтра:*", daySeparator, dayBlocks(groupByDay(ls), "*"))
+}
+
+func formatWeek(ls []lesson.Lesson) []string {
+	if len(ls) == 0 {
+		return nil
+	}
+
+	const header = "🗓 *Расписание на неделю*"
+	const limitNotice = "\n\n⚠️ Превышен лимит сообщения"
+	blocks := dayBlocks(groupByDay(ls), "*")
+	message := header + "\n\n" + strings.Join(blocks, daySeparator)
+	if utf8.RuneCountInString(message) <= maxMessageLen {
+		return []string{message}
+	}
+
+	var b strings.Builder
+	b.WriteString(header)
+	remaining := maxMessageLen - utf8.RuneCountInString(header+limitNotice)
+	sep := "\n\n"
+	for _, block := range blocks {
+		size := utf8.RuneCountInString(sep) + utf8.RuneCountInString(block)
+		if size > remaining {
+			break
+		}
+		b.WriteString(sep)
+		b.WriteString(block)
+		remaining -= size
+		sep = daySeparator
+	}
+	b.WriteString(limitNotice)
+	return []string{b.String()}
 }
 
 func formatChanged(changes []lesson.Change) []string {
