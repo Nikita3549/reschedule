@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"reschedule/internal/lesson"
+	"reschedule/internal/week"
 )
 
 type fakeLister struct {
@@ -21,9 +22,10 @@ func (f *fakeLister) ListBetween(_ context.Context, from, to time.Time) ([]lesso
 }
 
 type fakeNotifier struct {
-	calls int
-	ls    []lesson.Lesson
-	err   error
+	calls        int
+	ls           []lesson.Lesson
+	err          error
+	pinnedWeekID string
 }
 
 func (f *fakeNotifier) NotifyDaily(_ context.Context, ls []lesson.Lesson) error {
@@ -32,8 +34,44 @@ func (f *fakeNotifier) NotifyDaily(_ context.Context, ls []lesson.Lesson) error 
 	return f.err
 }
 
+func (*fakeNotifier) NotifyNoLessonsNextWeek(context.Context) error {
+	return nil
+}
+
+func (f *fakeNotifier) RotateWeekPins(_ context.Context, weekID string) error {
+	f.pinnedWeekID = weekID
+	return nil
+}
+
+type weekLookup func(context.Context, time.Time) (*week.Week, error)
+
+func (f weekLookup) ByDate(ctx context.Context, date time.Time) (*week.Week, error) {
+	return f(ctx, date)
+}
+
+func TestPinNextWeekLooksUpNextMondayDirectly(t *testing.T) {
+	now := time.Date(2026, 11, 28, 17, 0, 0, 0, time.UTC)
+	monday := time.Date(2026, 11, 30, 0, 0, 0, 0, lesson.TZ)
+	n := &fakeNotifier{}
+	weeks := weekLookup(func(_ context.Context, date time.Time) (*week.Week, error) {
+		if !date.Equal(monday) {
+			return nil, week.ErrNotFound
+		}
+		return &week.Week{ID: "next", StartAt: monday}, nil
+	})
+	s := New(nil, n, weeks)
+	s.now = func() time.Time { return now }
+
+	if err := s.pinNextWeek(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n.pinnedWeekID != "next" {
+		t.Errorf("pinned week = %q, want next", n.pinnedWeekID)
+	}
+}
+
 func newSender(l Lister, n Notifier, now time.Time) *Sender {
-	s := New(l, n)
+	s := New(l, n, nil)
 	s.now = func() time.Time { return now }
 	return s
 }
@@ -112,7 +150,7 @@ func TestSendRequestsNextDayFromCurrentTime(t *testing.T) {
 	l := &fakeLister{ls: ls}
 	n := &fakeNotifier{}
 	now := time.Date(2026, 11, 5, 20, 0, 0, 0, lesson.TZ)
-	s := New(l, n)
+	s := New(l, n, nil)
 	s.now = func() time.Time { return now }
 
 	for _, day := range []int{6, 7} {
@@ -182,7 +220,7 @@ func TestRunStopsOnCancel(t *testing.T) {
 	cancel()
 
 	n := &fakeNotifier{}
-	s := New(&fakeLister{}, n)
+	s := New(&fakeLister{}, n, nil)
 
 	done := make(chan struct{})
 	go func() {

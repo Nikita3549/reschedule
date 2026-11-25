@@ -42,7 +42,7 @@ func main() {
 	lessonsRepo := lesson.NewRepo(gormDB)
 	weekRepo := week.NewRepo(gormDB)
 
-	sender := digest.New(lessonsRepo, notifier)
+	sender := digest.New(lessonsRepo, notifier, weekRepo)
 	go sender.Run(ctx)
 
 	syncer := lesson.NewSyncer(lessonsRepo, weekRepo, parser, notifier)

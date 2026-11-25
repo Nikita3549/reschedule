@@ -52,6 +52,13 @@ func TestWeeklyPublication(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":317,"chat":{"id":99,"type":"private"}}}`))
+		case "/bot1:test/pinChatMessage":
+			if err := r.ParseMultipartForm(1 << 20); err != nil || r.FormValue("chat_id") != "99" || r.FormValue("message_id") != "317" {
+				http.Error(w, "invalid Telegram request", http.StatusBadRequest)
+				return
+			}
+			sent <- r.URL.Path
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -109,5 +116,17 @@ func TestWeeklyPublication(t *testing.T) {
 	want := weekmsg.Message{WeekID: w.ID, UserID: subscriber.ID, ChatID: subscriber.ChatID, MsgID: 317}
 	if len(messages) != 1 || messages[0] != want {
 		t.Errorf("week_messages = %+v, want [%+v]", messages, want)
+	}
+
+	if err := n.RotateWeekPins(ctx, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-sent:
+		if got != "/bot1:test/pinChatMessage" {
+			t.Errorf("unexpected Telegram request %q", got)
+		}
+	default:
+		t.Error("missing Telegram pin request")
 	}
 }

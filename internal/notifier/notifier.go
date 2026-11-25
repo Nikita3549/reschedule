@@ -2,6 +2,7 @@ package notifier
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -23,6 +24,8 @@ type UserStorer interface {
 
 type WeekMsgStorer interface {
 	CreateMany(ctx context.Context, wm []weekmsg.Message) error
+	ListForPinRotation(ctx context.Context, weekID string) ([]weekmsg.Message, error)
+	SetPinState(ctx context.Context, msg weekmsg.Message, state weekmsg.PinState) error
 }
 
 type Notifier struct {
@@ -63,6 +66,102 @@ func (n *Notifier) NotifyDaily(ctx context.Context, ls []lesson.Lesson) error {
 	return err
 }
 
+func (n *Notifier) NotifyNoLessonsNextWeek(ctx context.Context) error {
+	_, err := n.broadcast(ctx, "На следующей неделе нет пар.")
+	return err
+}
+
+func (n *Notifier) RotateWeekPins(ctx context.Context, weekID string) error {
+	msgs, err := n.weekMsgs.ListForPinRotation(ctx, weekID)
+	if err != nil {
+		return fmt.Errorf("list messages for pin rotation to week %s: %w", weekID, err)
+	}
+
+	var errs []error
+	ready := make(map[int64]bool)
+	for _, msg := range msgs {
+		if msg.WeekID != weekID {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		if err := n.pinWeekMessage(ctx, msg); err != nil {
+			errs = append(errs, err)
+			ready[msg.ChatID] = false
+		} else if _, exists := ready[msg.ChatID]; !exists {
+			ready[msg.ChatID] = true
+		}
+	}
+	if len(ready) == 0 {
+		return fmt.Errorf("no published messages for week %s", weekID)
+	}
+
+	for _, msg := range msgs {
+		if msg.WeekID == weekID {
+			continue
+		}
+		ok, exists := ready[msg.ChatID]
+		if !exists {
+			errs = append(errs, fmt.Errorf("no published message for week %s in chat %d", weekID, msg.ChatID))
+			ready[msg.ChatID] = false
+		}
+		if !ok {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		if err := n.unpinWeekMessage(ctx, msg); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (n *Notifier) pinWeekMessage(ctx context.Context, msg weekmsg.Message) error {
+	if msg.PinState == weekmsg.Pinned {
+		return nil
+	}
+	if msg.PinState == weekmsg.Unpinned {
+		if err := n.savePinState(ctx, msg, weekmsg.PinPending); err != nil {
+			return err
+		}
+	}
+	ok, err := n.bot.PinChatMessage(ctx, &bot.PinChatMessageParams{
+		ChatID:    msg.ChatID,
+		MessageID: msg.MsgID,
+	})
+	if err != nil {
+		return fmt.Errorf("pin message %d in chat %d: %w", msg.MsgID, msg.ChatID, err)
+	}
+	if !ok {
+		return fmt.Errorf("Telegram did not pin message %d in chat %d", msg.MsgID, msg.ChatID)
+	}
+	return n.savePinState(ctx, msg, weekmsg.Pinned)
+}
+
+func (n *Notifier) unpinWeekMessage(ctx context.Context, msg weekmsg.Message) error {
+	ok, err := n.bot.UnpinChatMessage(ctx, &bot.UnpinChatMessageParams{
+		ChatID:    msg.ChatID,
+		MessageID: msg.MsgID,
+	})
+	if err != nil {
+		return fmt.Errorf("unpin message %d in chat %d: %w", msg.MsgID, msg.ChatID, err)
+	}
+	if !ok {
+		return fmt.Errorf("Telegram did not unpin message %d in chat %d", msg.MsgID, msg.ChatID)
+	}
+	return n.savePinState(ctx, msg, weekmsg.Unpinned)
+}
+
+func (n *Notifier) savePinState(ctx context.Context, msg weekmsg.Message, state weekmsg.PinState) error {
+	if err := n.weekMsgs.SetPinState(ctx, msg, state); err != nil {
+		return fmt.Errorf("save pin state for message %d in chat %d: %w", msg.MsgID, msg.ChatID, err)
+	}
+	return nil
+}
+
 func (n *Notifier) PublishWeek(ctx context.Context, weekID string, ls []lesson.Lesson) error {
 	msgs, err := n.broadcast(ctx, formatWeek(ls))
 	if err != nil {
@@ -87,21 +186,22 @@ func (n *Notifier) PublishWeek(ctx context.Context, weekID string, ls []lesson.L
 	return err
 }
 
-func (n *Notifier) sendWeek(ctx context.Context, chatID int64, ls []lesson.Lesson) ([]int, error) {
-	msgs := formatWeek(ls)
-	ids := make([]int, 0, len(msgs))
-	for _, text := range msgs {
-		m, err := n.bot.SendMessage(ctx, &bot.SendMessageParams{
-			ChatID:    chatID,
-			Text:      text,
-			ParseMode: models.ParseModeMarkdown,
-		})
-		if err != nil {
-			return ids, fmt.Errorf("send week to chat %d: %w", chatID, err)
-		}
-		ids = append(ids, m.ID)
+func (n *Notifier) EditWeek(ctx context.Context, chatID int64, msgID int, ls []lesson.Lesson) error {
+	text := formatWeek(ls)
+	if text == "" {
+		text = "На этой неделе нет занятий."
 	}
-	return ids, nil
+
+	_, err := n.bot.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID:    chatID,
+		MessageID: msgID,
+		Text:      text,
+		ParseMode: models.ParseModeMarkdown,
+	})
+	if err != nil {
+		return fmt.Errorf("edit week message %d in chat %d: %w", msgID, chatID, err)
+	}
+	return nil
 }
 
 func (n *Notifier) sendWeek(ctx context.Context, chatID int64, ls []lesson.Lesson) (int, error) {

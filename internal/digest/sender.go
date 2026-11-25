@@ -2,34 +2,46 @@ package digest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"reschedule/internal/lesson"
+	"reschedule/internal/week"
 )
 
-const DefaultHour = 20
+const (
+	DefaultHour = 20
+)
 
 type Lister interface {
 	ListBetween(ctx context.Context, from, to time.Time) ([]lesson.Lesson, error)
 }
 
+type WeekRepo interface {
+	ByDate(ctx context.Context, date time.Time) (*week.Week, error)
+}
+
 type Notifier interface {
 	NotifyDaily(ctx context.Context, ls []lesson.Lesson) error
+	NotifyNoLessonsNextWeek(ctx context.Context) error
+	RotateWeekPins(ctx context.Context, weekID string) error
 }
 
 type Sender struct {
 	lessons  Lister
 	notifier Notifier
+	weeks    WeekRepo
 	hour     int
 	now      func() time.Time
 }
 
-func New(lister Lister, notifier Notifier) *Sender {
+func New(lister Lister, notifier Notifier, weekRepo WeekRepo) *Sender {
 	return &Sender{
 		lessons:  lister,
 		notifier: notifier,
+		weeks:    weekRepo,
 		hour:     DefaultHour,
 		now:      time.Now,
 	}
@@ -42,6 +54,12 @@ func (s *Sender) Run(ctx context.Context) {
 	for {
 		select {
 		case <-t.C:
+			if s.now().In(lesson.TZ).Weekday() == time.Saturday {
+				err := s.pinNextWeek(ctx)
+				if err != nil {
+					log.Printf("pin next week: %v", err)
+				}
+			}
 			if err := s.send(ctx); err != nil {
 				log.Printf("digest send: %v", err)
 			}
@@ -56,6 +74,22 @@ func (s *Sender) Run(ctx context.Context) {
 func (s *Sender) untilNextRun() time.Duration {
 	now := s.now()
 	return nextRun(now, s.hour).Sub(now)
+}
+
+func (s *Sender) pinNextWeek(ctx context.Context) error {
+	monday := tomorrow(s.now()).AddDate(0, 0, 1)
+	next, err := s.weeks.ByDate(ctx, monday)
+	if errors.Is(err, week.ErrNotFound) {
+		if err := s.notifier.NotifyNoLessonsNextWeek(ctx); err != nil {
+			return fmt.Errorf("notify about empty next week: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get next week: %w", err)
+	}
+
+	return s.notifier.RotateWeekPins(ctx, next.ID)
 }
 
 func (s *Sender) send(ctx context.Context) error {

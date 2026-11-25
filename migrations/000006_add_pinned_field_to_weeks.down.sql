@@ -1,0 +1,1 @@
+ALTER TABLE weeks DROP COLUMN IF EXISTS is_pinned;
