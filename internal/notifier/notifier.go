@@ -54,7 +54,7 @@ func (n *Notifier) Run(ctx context.Context) {
 }
 
 func (n *Notifier) Notify(ctx context.Context, ch lesson.Changes) error {
-	_, err := n.broadcast(ctx, slices.Concat(formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added)))
+	_, err := n.broadcast(ctx, formatCanceled(ch.Canceled), formatChanged(ch.Changed), formatAdded(ch.Added))
 	return err
 }
 
@@ -104,8 +104,25 @@ func (n *Notifier) sendWeek(ctx context.Context, chatID int64, ls []lesson.Lesso
 	return ids, nil
 }
 
-func (n *Notifier) broadcast(ctx context.Context, msgs []string) ([]sentMessage, error) {
-	if len(msgs) == 0 {
+func (n *Notifier) sendWeek(ctx context.Context, chatID int64, ls []lesson.Lesson) (int, error) {
+	text := formatWeek(ls)
+	if text == "" {
+		return 0, nil
+	}
+
+	msg, err := n.bot.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    chatID,
+		Text:      text,
+		ParseMode: models.ParseModeMarkdown,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("send week to chat %d: %w", chatID, err)
+	}
+	return msg.ID, nil
+}
+
+func (n *Notifier) broadcast(ctx context.Context, msgs ...string) ([]sentMessage, error) {
+	if !slices.ContainsFunc(msgs, func(text string) bool { return text != "" }) {
 		return nil, nil
 	}
 
@@ -117,6 +134,9 @@ func (n *Notifier) broadcast(ctx context.Context, msgs []string) ([]sentMessage,
 	var sent []sentMessage
 	for _, u := range us {
 		for _, text := range msgs {
+			if text == "" {
+				continue
+			}
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}

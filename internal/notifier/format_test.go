@@ -27,7 +27,7 @@ func TestFormatAdded(t *testing.T) {
 	tests := []struct {
 		name    string
 		lessons []lesson.Lesson
-		want    []string
+		want    string
 	}{
 		{
 			name: "empty",
@@ -35,10 +35,10 @@ func TestFormatAdded(t *testing.T) {
 		{
 			name:    "single lesson",
 			lessons: []lesson.Lesson{lessonAt(12, 8, 30, "Матан")},
-			want: []string{"🆕 *Добавлена пара*\n\n" +
+			want: "🆕 *Добавлена пара*\n\n" +
 				"📅 *Понедельник, 12 октября*\n\n" +
 				"🔹 *08:30 – 09:50* \\| *Матан*\n" +
-				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"},
+				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович",
 		},
 		{
 			name: "one day sorted",
@@ -46,12 +46,12 @@ func TestFormatAdded(t *testing.T) {
 				lessonAt(12, 10, 5, "Физика"),
 				lessonAt(12, 8, 30, "Матан"),
 			},
-			want: []string{"🆕 *Добавлены пары*\n\n" +
+			want: "🆕 *Добавлены пары*\n\n" +
 				"📅 *Понедельник, 12 октября*\n\n" +
 				"🔹 *08:30 – 09:50* \\| *Матан*\n" +
 				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович\n\n" +
 				"🔹 *10:05 – 11:25* \\| *Физика*\n" +
-				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"},
+				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович",
 		},
 		{
 			name: "several days",
@@ -59,20 +59,20 @@ func TestFormatAdded(t *testing.T) {
 				lessonAt(13, 8, 30, "Физика"),
 				lessonAt(12, 8, 30, "Матан"),
 			},
-			want: []string{"🗓 *Расписание на 12\\.10 – 13\\.10*\n\n" +
+			want: "🗓 *Расписание на 12\\.10 – 13\\.10*\n\n" +
 				"📅 *Понедельник, 12 октября*\n\n" +
 				"🔹 *08:30 – 09:50* \\| *Матан*\n" +
 				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович\n\n\\-\\-\\-\n\n" +
 				"📅 *Вторник, 13 октября*\n\n" +
 				"🔹 *08:30 – 09:50* \\| *Физика*\n" +
-				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"},
+				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := formatAdded(tt.lessons)
-			if strings.Join(got, "\n---\n") != strings.Join(tt.want, "\n---\n") {
+			if got != tt.want {
 				t.Errorf("formatAdded() =\n%q\nwant\n%q", got, tt.want)
 			}
 		})
@@ -84,7 +84,7 @@ func TestFormatAddedEscapesAndOmitsEmptyRoom(t *testing.T) {
 	l.Location = lesson.LocationOnline
 	l.Room = ""
 
-	got := formatAdded([]lesson.Lesson{l})[0]
+	got := formatAdded([]lesson.Lesson{l})
 
 	for _, want := range []string{"*Матем\\. анализ \\(часть 1\\)*", "— 📍 Онлайн\n"} {
 		if !strings.Contains(got, want) {
@@ -93,26 +93,31 @@ func TestFormatAddedEscapesAndOmitsEmptyRoom(t *testing.T) {
 	}
 }
 
-func TestFormatAddedSplitsLongMessages(t *testing.T) {
-	var ls []lesson.Lesson
-	for d := 1; d <= 30; d++ {
-		for h := 8; h < 20; h += 2 {
-			ls = append(ls, lessonAt(d, h, 0, strings.Repeat("Очень длинный предмет ", 2)))
-		}
-	}
+func TestFormattersLimitOversizedBlock(t *testing.T) {
+	old := lessonAt(12, 8, 30, strings.Repeat("А", maxMessageLen))
+	moved := old
+	moved.Room = "101"
+	ls := []lesson.Lesson{old}
 
-	got := formatAdded(ls)
-
-	if len(got) < 2 {
-		t.Fatalf("formatAdded() returned %d messages, want split", len(got))
+	tests := []struct {
+		name string
+		msg  string
+	}{
+		{"added", formatAdded(ls)},
+		{"canceled", formatCanceled(ls)},
+		{"daily", formatDaily(ls)},
+		{"week", formatWeek(ls)},
+		{"changed", formatChanged([]lesson.Change{{Old: old, New: moved}})},
 	}
-	for i, msg := range got {
-		if n := utf8.RuneCountInString(msg); n > maxMessageLen {
-			t.Errorf("message %d has %d runes, max %d", i, n, maxMessageLen)
-		}
-		if i > 0 && !strings.HasPrefix(msg, "📅") {
-			t.Errorf("message %d does not start with a day header: %q", i, msg[:20])
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if n := utf8.RuneCountInString(tt.msg); n > maxMessageLen {
+				t.Errorf("message has %d runes, max %d", n, maxMessageLen)
+			}
+			if !strings.HasSuffix(tt.msg, limitNotice) {
+				t.Error("message is missing the truncation notice")
+			}
+		})
 	}
 }
 
@@ -123,7 +128,7 @@ func TestFormatCanceled(t *testing.T) {
 		"📅 *Понедельник, 12 октября*\n\n" +
 		"🔹 *08:30 – 09:50* \\| ~Матан~\n" +
 		"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"
-	if len(got) != 1 || got[0] != want {
+	if got != want {
 		t.Errorf("formatCanceled() = %q, want %q", got, want)
 	}
 }
@@ -132,7 +137,7 @@ func TestFormatDaily(t *testing.T) {
 	tests := []struct {
 		name    string
 		lessons []lesson.Lesson
-		want    []string
+		want    string
 	}{
 		{
 			name: "no lessons",
@@ -143,19 +148,19 @@ func TestFormatDaily(t *testing.T) {
 				lessonAt(12, 10, 5, "Физика"),
 				lessonAt(12, 8, 30, "Матан"),
 			},
-			want: []string{"🗓 *Расписание на завтра:*\n\n" +
+			want: "🗓 *Расписание на завтра:*\n\n" +
 				"📅 *Понедельник, 12 октября*\n\n" +
 				"🔹 *08:30 – 09:50* \\| *Матан*\n" +
 				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович\n\n" +
 				"🔹 *10:05 – 11:25* \\| *Физика*\n" +
-				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"},
+				"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := formatDaily(tt.lessons)
-			if strings.Join(got, "\n---\n") != strings.Join(tt.want, "\n---\n") {
+			if got != tt.want {
 				t.Errorf("formatDaily() =\n%q\nwant\n%q", got, tt.want)
 			}
 		})
@@ -175,26 +180,22 @@ func TestFormatWeek(t *testing.T) {
 		"📅 *Вторник, 13 октября*\n\n" +
 		"🔹 *08:30 – 09:50* \\| *Физика*\n" +
 		"— 📖 Лекция\n— 📍 ул\\. м5, ауд\\. 309\n— 👨🏼‍🏫 Иванов Иван Иванович"
-	if len(got) != 1 || got[0] != want {
+	if got != want {
 		t.Errorf("formatWeek() = %q, want %q", got, want)
 	}
 
-	if got := formatWeek(nil); got != nil {
-		t.Errorf("formatWeek(nil) = %q, want nil", got)
+	if got := formatWeek(nil); got != "" {
+		t.Errorf("formatWeek(nil) = %q, want empty string", got)
 	}
 }
 
 func TestFormatWeekTruncatesAtDayBoundary(t *testing.T) {
 	first := strings.Repeat("А", 2200)
 	second := strings.Repeat("Б", 2200)
-	got := formatWeek([]lesson.Lesson{
+	msg := formatWeek([]lesson.Lesson{
 		lessonAt(12, 8, 30, first),
 		lessonAt(13, 8, 30, second),
 	})
-	if len(got) != 1 {
-		t.Fatalf("formatWeek() returned %d messages, want 1", len(got))
-	}
-	msg := got[0]
 	if n := utf8.RuneCountInString(msg); n > maxMessageLen {
 		t.Errorf("message has %d runes, max %d", n, maxMessageLen)
 	}
@@ -217,7 +218,7 @@ func TestFormatChanged(t *testing.T) {
 	tests := []struct {
 		name    string
 		changes []lesson.Change
-		want    []string
+		want    string
 	}{
 		{
 			name: "empty",
@@ -225,10 +226,10 @@ func TestFormatChanged(t *testing.T) {
 		{
 			name:    "only changed fields",
 			changes: []lesson.Change{{Old: old, New: moved}},
-			want: []string{"✏️ *Изменения в расписании*\n\n" +
+			want: "✏️ *Изменения в расписании*\n\n" +
 				"*Пн, 12 октября* `08:30 – 09:50` *Матан*\n" +
 				"Аудитория: ~309~ → *101*\n" +
-				"Преподаватель: ~Иванов Иван Иванович~ → *Петров Петр Петрович*"},
+				"Преподаватель: ~Иванов Иван Иванович~ → *Петров Петр Петрович*",
 		},
 		{
 			name:    "no visible diff",
@@ -241,16 +242,16 @@ func TestFormatChanged(t *testing.T) {
 				l.Room = ""
 				return l
 			}()}},
-			want: []string{"✏️ *Изменения в расписании*\n\n" +
+			want: "✏️ *Изменения в расписании*\n\n" +
 				"*Пн, 12 октября* `08:30 – 09:50` *Матан*\n" +
-				"Аудитория: ~309~ → *—*"},
+				"Аудитория: ~309~ → *—*",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := formatChanged(tt.changes)
-			if strings.Join(got, "\n---\n") != strings.Join(tt.want, "\n---\n") {
+			if got != tt.want {
 				t.Errorf("formatChanged() =\n%q\nwant\n%q", got, tt.want)
 			}
 		})

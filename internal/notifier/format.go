@@ -13,6 +13,7 @@ import (
 )
 
 const maxMessageLen = 4096
+const limitNotice = "\n\n⚠️ Превышен лимит сообщения"
 
 var weekdays = [...]string{"Воскресенье", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота"}
 
@@ -46,9 +47,9 @@ type day struct {
 	lessons []lesson.Lesson
 }
 
-func formatAdded(ls []lesson.Lesson) []string {
+func formatAdded(ls []lesson.Lesson) string {
 	if len(ls) == 0 {
-		return nil
+		return ""
 	}
 
 	days := groupByDay(ls)
@@ -64,12 +65,12 @@ func formatAdded(ls []lesson.Lesson) []string {
 		header = fmt.Sprintf("🗓 *Расписание на %s – %s*", bot.EscapeMarkdown(from.Format("02.01")), bot.EscapeMarkdown(to.Format("02.01")))
 	}
 
-	return pack(header, daySeparator, dayBlocks(days, "*"))
+	return formatMessage(header, daySeparator, dayBlocks(days, "*"))
 }
 
-func formatCanceled(ls []lesson.Lesson) []string {
+func formatCanceled(ls []lesson.Lesson) string {
 	if len(ls) == 0 {
-		return nil
+		return ""
 	}
 
 	header := "❌ *Отменены пары*"
@@ -77,49 +78,26 @@ func formatCanceled(ls []lesson.Lesson) []string {
 		header = "❌ *Отменена пара*"
 	}
 
-	return pack(header, daySeparator, dayBlocks(groupByDay(ls), "~"))
+	return formatMessage(header, daySeparator, dayBlocks(groupByDay(ls), "~"))
 }
 
-func formatDaily(ls []lesson.Lesson) []string {
+func formatDaily(ls []lesson.Lesson) string {
 	if len(ls) == 0 {
-		return nil
+		return ""
 	}
 
-	return pack("🗓 *Расписание на завтра:*", daySeparator, dayBlocks(groupByDay(ls), "*"))
+	return formatMessage("🗓 *Расписание на завтра:*", daySeparator, dayBlocks(groupByDay(ls), "*"))
 }
 
-func formatWeek(ls []lesson.Lesson) []string {
+func formatWeek(ls []lesson.Lesson) string {
 	if len(ls) == 0 {
-		return nil
+		return ""
 	}
 
-	const header = "🗓 *Расписание на неделю*"
-	const limitNotice = "\n\n⚠️ Превышен лимит сообщения"
-	blocks := dayBlocks(groupByDay(ls), "*")
-	message := header + "\n\n" + strings.Join(blocks, daySeparator)
-	if utf8.RuneCountInString(message) <= maxMessageLen {
-		return []string{message}
-	}
-
-	var b strings.Builder
-	b.WriteString(header)
-	remaining := maxMessageLen - utf8.RuneCountInString(header+limitNotice)
-	sep := "\n\n"
-	for _, block := range blocks {
-		size := utf8.RuneCountInString(sep) + utf8.RuneCountInString(block)
-		if size > remaining {
-			break
-		}
-		b.WriteString(sep)
-		b.WriteString(block)
-		remaining -= size
-		sep = daySeparator
-	}
-	b.WriteString(limitNotice)
-	return []string{b.String()}
+	return formatMessage("🗓 *Расписание на неделю*", daySeparator, dayBlocks(groupByDay(ls), "*"))
 }
 
-func formatChanged(changes []lesson.Change) []string {
+func formatChanged(changes []lesson.Change) string {
 	sorted := slices.SortedFunc(slices.Values(changes), func(a, b lesson.Change) int {
 		return a.New.StartAt.Compare(b.New.StartAt)
 	})
@@ -131,10 +109,10 @@ func formatChanged(changes []lesson.Change) []string {
 		}
 	}
 	if len(blocks) == 0 {
-		return nil
+		return ""
 	}
 
-	return pack("✏️ *Изменения в расписании*", "\n\n", blocks)
+	return formatMessage("✏️ *Изменения в расписании*", "\n\n", blocks)
 }
 
 func changeBlock(c lesson.Change) string {
@@ -240,25 +218,28 @@ func groupByDay(ls []lesson.Lesson) []day {
 	return days
 }
 
-func pack(header, sep string, blocks []string) []string {
-	var (
-		msgs []string
-		b    strings.Builder
-	)
+func formatMessage(header, sep string, blocks []string) string {
+	message := header + "\n\n" + strings.Join(blocks, sep)
+	if utf8.RuneCountInString(message) <= maxMessageLen {
+		return message
+	}
+
+	var b strings.Builder
 	b.WriteString(header)
+	remaining := maxMessageLen - utf8.RuneCountInString(header+limitNotice)
 	next := "\n\n"
 	for _, block := range blocks {
-		if b.Len() > 0 && utf8.RuneCountInString(b.String())+utf8.RuneCountInString(next)+utf8.RuneCountInString(block) > maxMessageLen {
-			msgs = append(msgs, b.String())
-			b.Reset()
+		size := utf8.RuneCountInString(next) + utf8.RuneCountInString(block)
+		if size > remaining {
+			break
 		}
-		if b.Len() > 0 {
-			b.WriteString(next)
-		}
+		b.WriteString(next)
 		b.WriteString(block)
+		remaining -= size
 		next = sep
 	}
-	return append(msgs, b.String())
+	b.WriteString(limitNotice)
+	return b.String()
 }
 
 func sameDate(a, b time.Time) bool {
