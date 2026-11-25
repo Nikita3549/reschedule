@@ -2,7 +2,6 @@ package notifier
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"slices"
@@ -116,19 +115,22 @@ func (n *Notifier) broadcast(ctx context.Context, msgs []string) ([]sentMessage,
 	}
 
 	var sent []sentMessage
-	var errs []error
 	for _, u := range us {
 		for _, text := range msgs {
 			if err := ctx.Err(); err != nil {
 				return nil, err
 			}
+
 			msg, err := n.bot.SendMessage(ctx, &bot.SendMessageParams{
 				ChatID:    u.ChatID,
 				Text:      text,
 				ParseMode: models.ParseModeMarkdown,
 			})
 			if err != nil {
-				errs = append(errs, fmt.Errorf("send to user %d: %w", u.ID, err))
+				if err = ctx.Err(); err != nil {
+					return nil, err
+				}
+				log.Printf("send to user %d: %v", u.ID, err)
 				break
 			}
 
@@ -140,7 +142,7 @@ func (n *Notifier) broadcast(ctx context.Context, msgs []string) ([]sentMessage,
 		}
 	}
 
-	return sent, errors.Join(errs...)
+	return sent, nil
 }
 
 func (n *Notifier) handleStart(ctx context.Context, b *bot.Bot, update *models.Update) {
