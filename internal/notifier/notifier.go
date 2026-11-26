@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"slices"
+	"strings"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -24,6 +25,7 @@ type UserStorer interface {
 
 type WeekMsgStorer interface {
 	CreateMany(ctx context.Context, wm []weekmsg.Message) error
+	ListByWeekID(ctx context.Context, weekID string) ([]weekmsg.Message, error)
 	ListForPinRotation(ctx context.Context, weekID string) ([]weekmsg.Message, error)
 	SetPinState(ctx context.Context, msg weekmsg.Message, state weekmsg.PinState) error
 }
@@ -187,9 +189,33 @@ func (n *Notifier) PublishWeek(ctx context.Context, weekID string, ls []lesson.L
 }
 
 func (n *Notifier) EditWeek(ctx context.Context, chatID int64, msgID int, ls []lesson.Lesson) error {
+	return n.editWeekMessage(ctx, chatID, msgID, formatWeek(ls))
+}
+
+func (n *Notifier) EditWeekMessages(ctx context.Context, weekID string, ls []lesson.Lesson) error {
+	msgs, err := n.weekMsgs.ListByWeekID(ctx, weekID)
+	if err != nil {
+		return fmt.Errorf("list messages for week %s: %w", weekID, err)
+	}
+
 	text := formatWeek(ls)
+	var errs []error
+	for _, msg := range msgs {
+		if err := ctx.Err(); err != nil {
+			return errors.Join(append(errs, err)...)
+		}
+		err := n.editWeekMessage(ctx, msg.ChatID, msg.MsgID, text)
+		if err == nil || (errors.Is(err, bot.ErrorBadRequest) && strings.Contains(err.Error(), "message is not modified")) {
+			continue
+		}
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
+}
+
+func (n *Notifier) editWeekMessage(ctx context.Context, chatID int64, msgID int, text string) error {
 	if text == "" {
-		text = "На этой неделе нет занятий."
+		text = "На этой неделе нет занятий"
 	}
 
 	_, err := n.bot.EditMessageText(ctx, &bot.EditMessageTextParams{

@@ -40,7 +40,7 @@ func TestChangesVisibleAllHidden(t *testing.T) {
 	hidden.Hide = true
 
 	got := Changes{Added: []Lesson{hidden}}.Visible()
-	if !got.HasChangeAlerts() {
+	if !got.HasNoChangeAlerts() {
 		t.Errorf("Visible() = %+v, want empty", got)
 	}
 }

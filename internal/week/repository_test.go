@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"reschedule/internal/db/dbtest"
-	"reschedule/internal/lesson"
 
 	"gorm.io/gorm"
 )
@@ -39,7 +38,7 @@ func TestRepo_ByDate(t *testing.T) {
 	r := NewRepo(db)
 	ctx := context.Background()
 
-	testDate := time.Date(2006, 1, 2, 15, 4, 5, 0, lesson.TZ)
+	testDate := time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC)
 	testWeeks := saveTestWeeks(t, db, testDate)
 
 	tests := []struct {
@@ -99,7 +98,7 @@ func TestRepo_Next(t *testing.T) {
 	r := NewRepo(db)
 	ctx := context.Background()
 
-	testDate := time.Date(2006, 1, 2, 15, 4, 5, 0, lesson.TZ)
+	testDate := time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC)
 	testWeeks := saveTestWeeks(t, db, testDate)
 
 	tests := []struct {
@@ -148,7 +147,7 @@ func TestRepo_IDsByDates(t *testing.T) {
 	r := NewRepo(db)
 	ctx := context.Background()
 
-	testDate := time.Date(2006, 1, 2, 15, 4, 5, 0, lesson.TZ)
+	testDate := time.Date(2006, 1, 2, 15, 4, 5, 0, time.UTC)
 	testWeeks := saveTestWeeks(t, db, testDate)
 
 	tests := []struct {

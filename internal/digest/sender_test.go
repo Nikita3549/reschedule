@@ -26,6 +26,7 @@ type fakeNotifier struct {
 	ls           []lesson.Lesson
 	err          error
 	pinnedWeekID string
+	emptyWeeks   int
 }
 
 func (f *fakeNotifier) NotifyDaily(_ context.Context, ls []lesson.Lesson) error {
@@ -34,7 +35,8 @@ func (f *fakeNotifier) NotifyDaily(_ context.Context, ls []lesson.Lesson) error 
 	return f.err
 }
 
-func (*fakeNotifier) NotifyNoLessonsNextWeek(context.Context) error {
+func (f *fakeNotifier) NotifyNoLessonsNextWeek(context.Context) error {
+	f.emptyWeeks++
 	return nil
 }
 
@@ -67,6 +69,25 @@ func TestPinNextWeekLooksUpNextMondayDirectly(t *testing.T) {
 	}
 	if n.pinnedWeekID != "next" {
 		t.Errorf("pinned week = %q, want next", n.pinnedWeekID)
+	}
+	if n.emptyWeeks != 0 {
+		t.Errorf("empty week notifications = %d, want 0", n.emptyWeeks)
+	}
+}
+
+func TestPinNextWeekNotifiesWhenScheduleIsMissing(t *testing.T) {
+	n := &fakeNotifier{}
+	weeks := weekLookup(func(context.Context, time.Time) (*week.Week, error) {
+		return nil, week.ErrNotFound
+	})
+	s := New(nil, n, weeks)
+	s.now = func() time.Time { return time.Date(2026, 11, 28, 20, 0, 0, 0, lesson.TZ) }
+
+	if err := s.pinNextWeek(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n.emptyWeeks != 1 || n.pinnedWeekID != "" {
+		t.Errorf("empty week notifications = %d, pinned week = %q; want one notification and no pin", n.emptyWeeks, n.pinnedWeekID)
 	}
 }
 

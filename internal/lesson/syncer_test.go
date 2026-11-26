@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"reschedule/internal/week"
 )
 
 type fakeFetcher struct {
@@ -39,18 +41,51 @@ func (s *fakeStore) ListFrom(context.Context, time.Time) ([]Lesson, error) {
 	return s.stored, s.listErr
 }
 
+func (s *fakeStore) ListBetween(_ context.Context, from, to time.Time) ([]Lesson, error) {
+	s.calls = append(s.calls, "ListBetween")
+	var lessons []Lesson
+	for _, l := range s.stored {
+		if !l.Hide && !l.StartAt.Before(from) && l.StartAt.Before(to) {
+			lessons = append(lessons, l)
+		}
+	}
+	return lessons, nil
+}
+
 func (s *fakeStore) Apply(_ context.Context, ch Changes) error {
 	s.calls = append(s.calls, "Apply")
 	s.applied = ch
-	return s.applyErr
+	if s.applyErr != nil {
+		return s.applyErr
+	}
+	s.stored = slices.Clone(s.stored)
+	for _, l := range ch.Canceled {
+		s.stored = slices.DeleteFunc(s.stored, func(stored Lesson) bool { return stored.ID == l.ID })
+	}
+	for _, c := range ch.Changed {
+		if i := slices.IndexFunc(s.stored, func(l Lesson) bool { return l.ID == c.Old.ID }); i >= 0 {
+			s.stored[i] = c.New
+		}
+	}
+	s.stored = append(s.stored, ch.Added...)
+	s.stored = append(s.stored, ch.NewWeekLessons...)
+	return nil
 }
 
 type fakeWeekRepo struct {
+	startAt     time.Time
 	noWeeksFrom time.Time
 	err         error
 	createErr   error
 
 	created []time.Time
+}
+
+func (w *fakeWeekRepo) ByID(_ context.Context, id string) (*week.Week, error) {
+	if id != "week" {
+		return nil, week.ErrNotFound
+	}
+	return &week.Week{ID: id, StartAt: w.startAt}, nil
 }
 
 func (w *fakeWeekRepo) IDsByDates(_ context.Context, dates []time.Time) ([]string, error) {
@@ -78,6 +113,7 @@ type fakeNotifier struct {
 	err       error
 	notified  []Changes
 	published []weekPublication
+	edited    []weekPublication
 }
 
 type weekPublication struct {
@@ -87,6 +123,11 @@ type weekPublication struct {
 
 func (n *fakeNotifier) PublishWeek(_ context.Context, weekID string, lessons []Lesson) error {
 	n.published = append(n.published, weekPublication{weekID: weekID, lessons: slices.Clone(lessons)})
+	return nil
+}
+
+func (n *fakeNotifier) EditWeekMessages(_ context.Context, weekID string, lessons []Lesson) error {
+	n.edited = append(n.edited, weekPublication{weekID: weekID, lessons: slices.Clone(lessons)})
 	return nil
 }
 
@@ -117,6 +158,8 @@ func TestSyncerSync(t *testing.T) {
 	errBoom := errors.New("boom")
 
 	all := []string{"IsEmpty", "ListFrom", "Apply"}
+	withEdit := []string{"IsEmpty", "ListFrom", "Apply", "ListBetween"}
+	edit := []weekPublication{{weekID: "week", lessons: []Lesson{kept, changed, added}}}
 
 	want := Changes{
 		Added:    []Lesson{added},
@@ -133,13 +176,15 @@ func TestSyncerSync(t *testing.T) {
 		wantErr      error
 		wantCalls    []string
 		wantNotified []Changes
+		wantEdited   []weekPublication
 	}{
 		{
 			name:         "applies diff of future lessons and notifies",
 			fetcher:      &fakeFetcher{lessons: fetched},
 			store:        &fakeStore{stored: stored},
-			wantCalls:    all,
+			wantCalls:    withEdit,
 			wantNotified: []Changes{want},
+			wantEdited:   edit,
 		},
 		{
 			name:      "bootstrap applies without notifying",
@@ -159,8 +204,9 @@ func TestSyncerSync(t *testing.T) {
 			store:        &fakeStore{stored: stored},
 			notifier:     &fakeNotifier{err: errBoom},
 			wantErr:      errBoom,
-			wantCalls:    all,
+			wantCalls:    withEdit,
 			wantNotified: []Changes{want},
+			wantEdited:   edit,
 		},
 		{
 			name:      "is empty error stops sync",
@@ -217,6 +263,7 @@ func TestSyncerSync(t *testing.T) {
 			if w == nil {
 				w = &fakeWeekRepo{}
 			}
+			w.startAt = mondayOf(kept.StartAt)
 			s := NewSyncer(tt.store, w, tt.fetcher, n)
 
 			err := s.Sync(context.Background())
@@ -228,6 +275,9 @@ func TestSyncerSync(t *testing.T) {
 			}
 			if !reflect.DeepEqual(n.notified, tt.wantNotified) {
 				t.Fatalf("notified = %+v, want %+v", n.notified, tt.wantNotified)
+			}
+			if !reflect.DeepEqual(n.edited, tt.wantEdited) {
+				t.Errorf("edited weeks = %+v, want %+v", n.edited, tt.wantEdited)
 			}
 			if tt.wantErr != nil || len(tt.wantNotified) == 0 {
 				return
@@ -246,7 +296,7 @@ func TestSyncerSyncHidden(t *testing.T) {
 
 	store := &fakeStore{stored: []Lesson{kept}}
 	n := &fakeNotifier{}
-	s := NewSyncer(store, &fakeWeekRepo{}, &fakeFetcher{lessons: []Lesson{kept, hidden}}, n)
+	s := NewSyncer(store, &fakeWeekRepo{startAt: mondayOf(kept.StartAt)}, &fakeFetcher{lessons: []Lesson{kept, hidden}}, n)
 
 	if err := s.Sync(context.Background()); err != nil {
 		t.Fatalf("Sync() error = %v", err)
@@ -330,7 +380,7 @@ func TestSyncerSyncWeeks(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := &fakeStore{stored: []Lesson{kept}}
-			weeks := &fakeWeekRepo{noWeeksFrom: outOfWeek.StartAt, createErr: tt.createErr}
+			weeks := &fakeWeekRepo{startAt: mondayOf(kept.StartAt), noWeeksFrom: mondayOf(outOfWeek.StartAt), createErr: tt.createErr}
 			n := &fakeNotifier{}
 			s := NewSyncer(store, weeks, &fakeFetcher{lessons: tt.fetched}, n)
 

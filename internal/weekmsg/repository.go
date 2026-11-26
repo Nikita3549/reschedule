@@ -23,6 +23,12 @@ func (r *Repo) CreateMany(ctx context.Context, wm []Message) error {
 	return r.db.WithContext(ctx).Create(&wm).Error
 }
 
+func (r *Repo) ListByWeekID(ctx context.Context, weekID string) ([]Message, error) {
+	var msgs []Message
+	err := r.db.WithContext(ctx).Where("week_id = ?", weekID).Find(&msgs).Error
+	return msgs, err
+}
+
 func (r *Repo) ListForPinRotation(ctx context.Context, weekID string) ([]Message, error) {
 	var msgs []Message
 	err := r.db.WithContext(ctx).

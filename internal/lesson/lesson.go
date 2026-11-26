@@ -52,7 +52,7 @@ type Changes struct {
 	Changed        []Change
 }
 
-func (c Changes) HasChangeAlerts() bool {
+func (c Changes) HasNoChangeAlerts() bool {
 	return len(c.Added) == 0 && len(c.Canceled) == 0 && len(c.Changed) == 0
 }
 

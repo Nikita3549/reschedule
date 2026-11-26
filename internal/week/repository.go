@@ -48,6 +48,18 @@ func (r *Repo) ByDate(ctx context.Context, date time.Time) (*Week, error) {
 	return &week, nil
 }
 
+func (r *Repo) ByID(ctx context.Context, id string) (*Week, error) {
+	var w Week
+	err := r.db.WithContext(ctx).Where("id = ?", id).First(&w).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get week by id: %w", err)
+	}
+	return &w, nil
+}
+
 func (r *Repo) IDsByDates(ctx context.Context, dates []time.Time) ([]string, error) {
 	if len(dates) == 0 {
 		return []string{}, nil

@@ -1,12 +1,43 @@
 package parser
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 	"time"
 
+	"reschedule/internal/config"
 	"reschedule/internal/lesson"
 )
+
+func TestFetchSchedule(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/schedule" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, "testdata/schedule.html")
+	}))
+	t.Cleanup(server.Close)
+
+	p := New(&config.ParserConfig{URL: server.URL + "/schedule"})
+	got, err := p.Fetch(t.Context())
+	if err != nil {
+		t.Fatalf("Fetch() = %v", err)
+	}
+	if len(got) != 47 {
+		t.Fatalf("Fetch() returned %d lessons, want 47", len(got))
+	}
+	start := time.Date(2026, 10, 14, 12, 5, 0, 0, lesson.TZ)
+	if !slices.ContainsFunc(got, func(l lesson.Lesson) bool {
+		return l.StartAt.Equal(start) && l.Subject == "Иностранный язык" &&
+			l.Room == "3 подгр. — 303 ауд., 4 подгр. — 310 ауд." && l.ID != ""
+	}) {
+		t.Error("Fetch() did not return the merged foreign language lesson")
+	}
+}
 
 func TestParse(t *testing.T) {
 	f, err := os.Open("testdata/schedule.html")
