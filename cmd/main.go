@@ -29,23 +29,31 @@ func main() {
 		log.Fatalf("open db: %v", err)
 	}
 
+	weekRepo := week.NewRepo(gormDB)
 	weekMsgRepo := weekmsg.NewRepo(gormDB)
-	usersRepo := user.NewRepo(gormDB)
+	userRepo := user.NewRepo(gormDB)
+	lessonRepo := lesson.NewRepo(gormDB)
 
-	notifier, err := notifier.New(cfg.Token, usersRepo, weekMsgRepo)
+	notifier, err := notifier.New(
+		cfg.Token,
+		&notifier.Deps{
+			Users:    userRepo,
+			WeekMsgs: weekMsgRepo,
+			Weeks:    weekRepo,
+			Lessons:  lessonRepo,
+		},
+	)
 	if err != nil {
 		log.Fatalf("create notifier: %v", err)
 	}
 	go notifier.Run(ctx)
 
 	parser := parser.New(cfg.ParserConfig)
-	lessonsRepo := lesson.NewRepo(gormDB)
-	weekRepo := week.NewRepo(gormDB)
 
-	sender := digest.New(lessonsRepo, notifier, weekRepo)
+	sender := digest.New(lessonRepo, notifier, weekRepo)
 	go sender.Run(ctx)
 
-	syncer := lesson.NewSyncer(lessonsRepo, weekRepo, parser, notifier)
+	syncer := lesson.NewSyncer(lessonRepo, weekRepo, parser, notifier)
 
 	watcher := watcher.New(syncer)
 

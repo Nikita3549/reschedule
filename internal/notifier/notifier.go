@@ -7,16 +7,23 @@ import (
 	"log"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 
 	"reschedule/internal/lesson"
 	"reschedule/internal/user"
+	"reschedule/internal/week"
 	"reschedule/internal/weekmsg"
 )
 
-const startReply = "Вы подписались на уведомления об изменениях в расписании."
+const startReply = `👋 <b>Привет! Я — бот расписания ИБ БГУ</b>
+
+<b>Что я умею:</b>
+— ⚡ <b>Мгновенно присылать расписание</b> — как только оно появляется на сайте ИБ БГУ, оно сразу здесь
+— 📌 <b>Держать актуальную неделю в закрепе</b> — расписание на всю неделю всегда под рукой
+— 🔔 <b>Сообщать об изменениях</b> — если среди недели пару отменят, перенесут или поменяют аудиторию, я сразу пришлю уведомление и сам обновлю сообщение в закрепе`
 
 type UserStorer interface {
 	Save(ctx context.Context, u user.User) error
@@ -30,10 +37,20 @@ type WeekMsgStorer interface {
 	SetPinState(ctx context.Context, msg weekmsg.Message, state weekmsg.PinState) error
 }
 
+type WeekFinder interface {
+	ByDate(ctx context.Context, date time.Time) (*week.Week, error)
+}
+
+type LessonLister interface {
+	ListBetween(ctx context.Context, from, to time.Time) ([]lesson.Lesson, error)
+}
+
 type Notifier struct {
-	bot      *bot.Bot
-	users    UserStorer
-	weekMsgs WeekMsgStorer
+	bot          *bot.Bot
+	users        UserStorer
+	weekMsgs     WeekMsgStorer
+	weekRepo     WeekFinder
+	lessonStorer LessonLister
 }
 
 type sentMessage struct {
@@ -42,8 +59,20 @@ type sentMessage struct {
 	userID int64
 }
 
-func New(token string, s UserStorer, wm WeekMsgStorer) (*Notifier, error) {
-	n := &Notifier{users: s, weekMsgs: wm}
+type Deps struct {
+	Users    UserStorer
+	WeekMsgs WeekMsgStorer
+	Weeks    WeekFinder
+	Lessons  LessonLister
+}
+
+func New(token string, deps *Deps) (*Notifier, error) {
+	n := &Notifier{
+		users:        deps.Users,
+		weekMsgs:     deps.WeekMsgs,
+		weekRepo:     deps.Weeks,
+		lessonStorer: deps.Lessons,
+	}
 
 	b, err := bot.New(token, bot.WithMessageTextHandler("start", bot.MatchTypeCommandStartOnly, n.handleStart))
 	if err != nil {
@@ -310,8 +339,60 @@ func (n *Notifier) handleStart(ctx context.Context, b *bot.Bot, update *models.U
 		return
 	}
 
-	_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: msg.Chat.ID, Text: startReply})
+	_, err := b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID:    msg.Chat.ID,
+		Text:      startReply,
+		ParseMode: models.ParseModeHTML,
+	})
 	if err != nil {
 		log.Printf("reply start to user %d: %v", u.ID, err)
+		return
+	}
+
+	date := time.Now().In(lesson.TZ)
+	weekday := date.Weekday()
+
+	if weekday == time.Saturday || weekday == time.Sunday {
+		date = date.AddDate(0, 0, 2)
+	}
+	w, err := n.weekRepo.ByDate(ctx, date)
+	if err != nil {
+		log.Printf("get week by date: %v", err)
+		return
+	}
+
+	lessons, err := n.lessonStorer.ListBetween(ctx, w.StartAt, w.End())
+	if err != nil {
+		log.Printf("list lessons for week %s: %v", w.ID, err)
+		return
+	}
+	msgID, err := n.sendWeek(ctx, u.ChatID, lessons)
+	if err != nil {
+		log.Printf("send start week message: %v", err)
+		return
+	}
+	if msgID == 0 {
+		return
+	}
+
+	weekMsg := weekmsg.Message{
+		WeekID:   w.ID,
+		UserID:   u.ID,
+		MsgID:    msgID,
+		ChatID:   u.ChatID,
+		PinState: weekmsg.PinPending,
+	}
+
+	err = n.weekMsgs.CreateMany(ctx, []weekmsg.Message{
+		weekMsg,
+	})
+	if err != nil {
+		log.Printf("save week msg: %v", err)
+		return
+	}
+
+	err = n.pinWeekMessage(ctx, weekMsg)
+	if err != nil {
+		log.Printf("pin start week message: %v", err)
 	}
 }
